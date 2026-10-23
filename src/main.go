@@ -6,6 +6,7 @@ import (
 
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/routes"
+	"cosmosbdr/src/temporal"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -16,15 +17,23 @@ func main() {
 	// 1. Load configuration
 	cfg := config.LoadConfig()
 
-	// 2. Initialize Fiber app instance
+	// 2. Initialize Temporal Client
+	temporalClient, err := temporal.InitClient(cfg)
+	if err != nil {
+		log.Printf("Warning: Could not connect to Temporal server: %v. (Make sure Temporal dev server is running)", err)
+	} else {
+		defer temporalClient.Close()
+	}
+
+	// 3. Initialize Fiber app instance
 	app := fiber.New(fiber.Config{
 		AppName: "CosmosBDR API Gateway",
 	})
 
-	// 3. Register routes
+	// 4. Register routes
 	routes.RegisterRoutes(app)
 
-	// 4. Start listening on IPv4 loopback / configured port
+	// 5. Start listening on IPv4 loopback / configured port
 	address := ":" + strconv.Itoa(cfg.Port)
 	log.Printf("CosmosBDR API Gateway running on http://%s...", address)
 

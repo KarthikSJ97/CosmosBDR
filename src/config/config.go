@@ -15,6 +15,8 @@ type Config struct {
 	SeaweedAccessKey  string
 	SeaweedSecretKey  string
 	EncryptionKey     string // 32 bytes hex or string for AES-256
+	TemporalHost      string
+	TemporalPort      int
 }
 
 func LoadConfig() *Config {
@@ -30,6 +32,8 @@ func LoadConfig() *Config {
 		SeaweedAccessKey:  getEnvString("SEAWEED_ACCESS_KEY", "dummy"),
 		SeaweedSecretKey:  getEnvString("SEAWEED_SECRET_KEY", "dummy"),
 		EncryptionKey:     getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev
+		TemporalHost:      getEnvString("TEMPORAL_HOST", "localhost"),
+		TemporalPort:      getEnvInt("TEMPORAL_PORT", 7233),
 	}
 }
 
