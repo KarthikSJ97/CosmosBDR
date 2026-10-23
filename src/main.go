@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -20,7 +21,10 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// 2. Initialize PostgreSQL Connection Pool
-	dbPool, err := db.InitPostgres(cfg.DatabaseURL)
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%v/%s?sslmode=%v",
+		cfg.PostgresDBUserName, cfg.PostgresDBPassword, cfg.PostgresDBHost, cfg.PostgresDBPort, cfg.PostgresDBName, cfg.PostgresDBSSL,
+	)
+	dbPool, err := db.InitPostgres(dbURL)
 	if err != nil {
 		log.Printf("Warning: Could not connect to PostgreSQL: %v. (Make sure your Postgres instance is running)", err)
 	} else {

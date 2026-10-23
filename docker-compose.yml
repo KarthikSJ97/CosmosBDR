@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: cosmosbdr_postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB_NAME:-cosmosbdr}
+    ports:
+      - "${POSTGRES_DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_DB_USERNAME:-postgres} -d ${POSTGRES_DB_NAME:-cosmosbdr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: cosmosbdr_seaweedfs
+    command: "server -s3 -dir=/data -s3.port=8333 -master.port=9333"
+    ports:
+      - "8333:8333"
+      - "9333:9333"
+    volumes:
+      - seaweeddata:/data
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: cosmosbdr_temporal
+    ports:
+      - "${TEMPORAL_GRPC_PORT:-7233}:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_SEEDS=postgres
+      - POSTGRES_USER=${POSTGRES_DB_USERNAME:-postgres}
+      - POSTGRES_PWD=${POSTGRES_DB_PASSWORD:-postgres}
+      - DBNAME=temporal
+      - VISIBILITY_DBNAME=temporal_visibility
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: cosmosbdr_temporal_ui
+    ports:
+      - "${TEMPORAL_UI_PORT:-8233}:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - temporal
+
+  cosmosbdr:
+    build: .
+    container_name: cosmosbdr_app
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB_HOST=postgres
+      - SEAWEED_ENDPOINT=http://seaweedfs:8333
+      - TEMPORAL_GRPC_HOST=temporal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+      temporal:
+        condition: service_started
+
+volumes:
+  pgdata:
+  seaweeddata:

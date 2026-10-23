@@ -12,7 +12,7 @@ import (
 // InitClient establishes a connection to the Temporal server using client.Dial
 func InitClient(cfg *config.Config) (client.Client, error) {
 	c, err := client.Dial(client.Options{
-		HostPort: cfg.TemporalHost + ":" + strconv.Itoa(cfg.TemporalPort),
+		HostPort: cfg.TemporalGRPCHost + ":" + strconv.Itoa(cfg.TemporalGRPCPort),
 	})
 	if err != nil {
 		return nil, err
