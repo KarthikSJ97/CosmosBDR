@@ -9,14 +9,16 @@ import (
 )
 
 type Config struct {
-	Port              int
-	DatabaseURL       string
-	SeaweedS3Endpoint string
-	SeaweedAccessKey  string
-	SeaweedSecretKey  string
-	EncryptionKey     string // 32 bytes hex or string for AES-256
-	TemporalHost      string
-	TemporalPort      int
+	Port             int
+	DatabaseURL      string
+	SeaweedEndpoint  string
+	SeaweedRegion    string
+	SeaweedAccessKey string
+	SeaweedSecretKey string
+	SeaweedBucket    string
+	EncryptionKey    string // 32 bytes hex or string for AES-256
+	TemporalHost     string
+	TemporalPort     int
 }
 
 func LoadConfig() *Config {
@@ -26,14 +28,16 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		Port:              getEnvInt("PORT", 8080),
-		DatabaseURL:       getEnvString("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cosmosbdr?sslmode=disable"),
-		SeaweedS3Endpoint: getEnvString("SEAWEED_S3_ENDPOINT", "http://localhost:8333"),
-		SeaweedAccessKey:  getEnvString("SEAWEED_ACCESS_KEY", "dummy"),
-		SeaweedSecretKey:  getEnvString("SEAWEED_SECRET_KEY", "dummy"),
-		EncryptionKey:     getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev
-		TemporalHost:      getEnvString("TEMPORAL_HOST", "localhost"),
-		TemporalPort:      getEnvInt("TEMPORAL_PORT", 7233),
+		Port:             getEnvInt("PORT", 8080),
+		DatabaseURL:      getEnvString("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/cosmosbdr?sslmode=disable"),
+		SeaweedEndpoint:  getEnvString("SEAWEED_ENDPOINT", "http://localhost:8333"),
+		SeaweedRegion:    getEnvString("SEAWEED_REGION", "region"),
+		SeaweedAccessKey: getEnvString("SEAWEED_ACCESS_KEY", "dummy"),
+		SeaweedSecretKey: getEnvString("SEAWEED_SECRET_KEY", "dummy"),
+		SeaweedBucket:    getEnvString("SEAWEED_BUCKET", "bucket"),
+		EncryptionKey:    getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev
+		TemporalHost:     getEnvString("TEMPORAL_HOST", "localhost"),
+		TemporalPort:     getEnvInt("TEMPORAL_PORT", 7233),
 	}
 }
 
