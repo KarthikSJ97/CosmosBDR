@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"cosmosbdr/src/config"
+	"cosmosbdr/src/db"
 	"cosmosbdr/src/routes"
 	"cosmosbdr/src/temporal"
 
@@ -17,23 +18,31 @@ func main() {
 	// 1. Load configuration
 	cfg := config.LoadConfig()
 
-	// 2. Initialize Temporal Client
+	// 2. Initialize PostgreSQL Connection Pool
+	dbPool, err := db.InitPostgres(cfg.DatabaseURL)
+	if err != nil {
+		log.Printf("Warning: Could not connect to PostgreSQL: %v. (Make sure your Postgres instance is running)", err)
+	} else {
+		defer dbPool.Close()
+	}
+
+	// 3. Initialize Temporal Client
 	temporalClient, err := temporal.InitClient(cfg)
 	if err != nil {
-		log.Printf("Warning: Could not connect to Temporal server: %v. (Make sure Temporal dev server is running)", err)
+		log.Printf("Warning: Could not connect to Temporal server: %v.", err)
 	} else {
 		defer temporalClient.Close()
 	}
 
-	// 3. Initialize Fiber app instance
+	// 4. Initialize Fiber app instance
 	app := fiber.New(fiber.Config{
 		AppName: "CosmosBDR API Gateway",
 	})
 
-	// 4. Register routes
+	// 5. Register routes
 	routes.RegisterRoutes(app)
 
-	// 5. Start listening on IPv4 loopback / configured port
+	// 6. Start listening on IPv4 loopback / configured port
 	address := ":" + strconv.Itoa(cfg.Port)
 	log.Printf("CosmosBDR API Gateway running on http://%s...", address)
 
