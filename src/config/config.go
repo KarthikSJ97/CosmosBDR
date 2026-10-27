@@ -34,8 +34,8 @@ type Config struct {
 	TemporalUIPort   int
 
 	// Other
-	EncryptionKey string // 32 bytes hex or string for AES-256
-
+	EncryptionKey        string // 32 bytes hex or string for AES-256
+	CompressionAlgorithm string
 }
 
 func LoadConfig() *Config {
@@ -69,6 +69,7 @@ func LoadConfig() *Config {
 
 		// Other
 		EncryptionKey: getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev
+		CompressionAlgorithm: getEnvString("COMPRESSION_ALGORITHM", "gzip"),
 
 	}
 }
