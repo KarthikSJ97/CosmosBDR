@@ -28,6 +28,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/bin/cosmosbdr /app/cosmosbdr
 
+# COPY the migration schema directory from the builder stage
+COPY --from=builder /app/src/db/migrations /app/src/db/migrations
+
 EXPOSE 8080
 
 CMD ["./cosmosbdr"]

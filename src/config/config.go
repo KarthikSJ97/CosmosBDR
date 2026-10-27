@@ -13,13 +13,13 @@ type Config struct {
 	Port int
 
 	// Postgres DB
-	PostgresDBUserName      string
-	PostgresDBPassword      string
-	PostgresDBName          string
-	PostgresDBHost          string
-	PostgresDBPort          int
-	PostgresDBSSL           bool
-	PostgresSchemaDirectory string
+	PostgresDBUserName            string
+	PostgresDBPassword            string
+	PostgresDBName                string
+	PostgresDBHost                string
+	PostgresDBPort                int
+	PostgresDBSSL                 string
+	PostgresDBMigrationsDirectory string
 
 	// SeaWeedFs storage
 	SeaweedEndpoint  string
@@ -50,13 +50,13 @@ func LoadConfig() *Config {
 		Port: getEnvInt("PORT", 8080),
 
 		// Postgres DB
-		PostgresDBUserName:      getEnvString("POSTGRES_DB_USERNAME", "postgres"),
-		PostgresDBPassword:      getEnvString("POSTGRES_DB_PASSWORD", "postgres"),
-		PostgresDBName:          getEnvString("POSTGRES_DB_NAME", "cosmosbdr"),
-		PostgresDBHost:          getEnvString("POSTGRES_DB_HOST", "localhost"),
-		PostgresDBPort:          getEnvInt("POSTGRES_DB_PORT", 5432),
-		PostgresDBSSL:           getEnvBool("POSTGRES_DB_SSL", false),
-		PostgresSchemaDirectory: getEnvString("POSTGRES_DB_SCHEMA_DIRECTORY", "./src/db/schema"),
+		PostgresDBUserName:            getEnvString("POSTGRES_DB_USERNAME", "postgres"),
+		PostgresDBPassword:            getEnvString("POSTGRES_DB_PASSWORD", "postgres"),
+		PostgresDBName:                getEnvString("POSTGRES_DB_NAME", "cosmosbdr"),
+		PostgresDBHost:                getEnvString("POSTGRES_DB_HOST", "localhost"),
+		PostgresDBPort:                getEnvInt("POSTGRES_DB_PORT", 5432),
+		PostgresDBSSL:                 getEnvString("POSTGRES_DB_SSL", "disable"),
+		PostgresDBMigrationsDirectory: getEnvString("POSTGRES_DB_MIGRATIONS_DIRECTORY", "src/db/migrations"),
 
 		// SeaWeedFs storage
 		SeaweedEndpoint:  getEnvString("SEAWEED_ENDPOINT", "http://localhost:8333"),
