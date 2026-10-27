@@ -23,6 +23,10 @@ type InitJobResponse struct {
 }
 
 func (ja *JobActivities) InitJobActivity(ctx context.Context, request InitJobRequest) (*InitJobResponse, error) {
+	if len(request.Payload) == 0 {
+		request.Payload = []byte("{}")
+	}
+
 	job := &schema.Job{
 		FlowType:   request.FlowType,
 		Status:     "IN_PROGRESS",

@@ -1,16 +1,18 @@
 package workflows
 
 import (
-	"time"
 	"cosmosbdr/src/temporal/activities"
+	"encoding/json"
+	"time"
+
 	"go.temporal.io/sdk/workflow"
 )
 
 type BackupWorkflowRequest struct {
-	FlowType   string
-	SourcePath string
-	TargetPath string
-	Payload    []byte
+	FlowType   string          `json:"flow_type"`
+	SourcePath string          `json:"source_path"`
+	TargetPath string          `json:"target_path"`
+	Payload    json.RawMessage `json:"payload"`
 }
 
 type BackupWorkflowResponse struct {
@@ -33,7 +35,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	}
 
 	var actResp activities.InitJobResponse
-	
+
 	// Invoke the activity using interface pointer syntax
 	var jobActivities *activities.JobActivities
 	err := workflow.ExecuteActivity(ctx, jobActivities.InitJobActivity, actReq).Get(ctx, &actResp)
