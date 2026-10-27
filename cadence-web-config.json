@@ -1,0 +1,11 @@
+{
+    "searchCluster": "active",
+    "defaultCluster": "active",
+    "clusters": {
+      "active": {
+        "userFacingName": "active",
+        "ripPool": ["cadence:7933"],
+        "tls": false
+      }
+    }
+  }

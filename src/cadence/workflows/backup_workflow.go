@@ -1,11 +1,11 @@
 package workflows
 
 import (
-	"cosmosbdr/src/temporal/activities"
+	"cosmosbdr/src/cadence/activities"
 	"encoding/json"
 	"time"
 
-	"go.temporal.io/sdk/workflow"
+	"go.uber.org/cadence/workflow"
 )
 
 type BackupWorkflowRequest struct {

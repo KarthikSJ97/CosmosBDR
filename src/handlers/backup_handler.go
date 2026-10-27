@@ -1,20 +1,21 @@
-package routes
+package handlers
 
 import (
-	"cosmosbdr/src/temporal/workflows"
+	"cosmosbdr/src/cadence/workflows"
 	"fmt"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/client"
+	cadenceClient "go.uber.org/cadence/client"
 )
 
 type BackupHandler struct {
-	TemporalClient client.Client
+	CadenceClient cadenceClient.Client
 }
 
-func NewBackupHandler(temporalClient client.Client) *BackupHandler {
-	return &BackupHandler{TemporalClient: temporalClient}
+func NewBackupHandler(cadenceClient cadenceClient.Client) *BackupHandler {
+	return &BackupHandler{CadenceClient: cadenceClient}
 }
 
 func (h *BackupHandler) TriggerBackup(c *fiber.Ctx) error {
@@ -26,15 +27,16 @@ func (h *BackupHandler) TriggerBackup(c *fiber.Ctx) error {
 	}
 
 	// Generate a unique Workflow ID based on your domain
-	workflowID := fmt.Sprintf("backup-%s-%s", req.FlowType, uuid.New().String())
+	workflowID := fmt.Sprintf("backup_%s_%s", req.FlowType, uuid.New().String())
 
-	options := client.StartWorkflowOptions{
-		ID:        workflowID,
-		TaskQueue: "cosmosbdr-task-queue",
+	options := cadenceClient.StartWorkflowOptions{
+		ID:                           workflowID,
+		TaskList:                     "cosmosbdr-task-queue",
+		ExecutionStartToCloseTimeout: 1 * time.Hour,
 	}
 
 	// Asynchronously start the workflow
-	we, err := h.TemporalClient.ExecuteWorkflow(c.Context(), options, workflows.BackupWorkflow, req)
+	we, err := h.CadenceClient.ExecuteWorkflow(c.Context(), options, workflows.BackupWorkflow, req)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to start backup workflow: " + err.Error(),

@@ -28,32 +28,51 @@ services:
     volumes:
       - seaweeddata:/data
 
-  temporal:
-    image: temporalio/auto-setup:latest
-    container_name: cosmosbdr_temporal
+  cadence:
+    image: ubercadence/server:master-auto-setup
+    container_name: cosmosbdr_cadence
     ports:
-      - "${TEMPORAL_GRPC_PORT:-7233}:7233"
+      - "${CADENCE_GRPC_PORT:-7933}:7933"
+      - "7833:7833" # <-- Ensure port 7833 is exposed for the Web UI gRPC connection
     environment:
-      - DB=postgres12
+      - DB=postgres
       - DB_PORT=5432
       - POSTGRES_SEEDS=postgres
       - POSTGRES_USER=${POSTGRES_DB_USERNAME:-postgres}
       - POSTGRES_PWD=${POSTGRES_DB_PASSWORD:-postgres}
-      - DBNAME=temporal
-      - VISIBILITY_DBNAME=temporal_visibility
+      - DBNAME=cadence
+      - VISIBILITY_DBNAME=cadence_visibility
     depends_on:
       postgres:
         condition: service_healthy
 
-  temporal-ui:
-    image: temporalio/ui:latest
-    container_name: cosmosbdr_temporal_ui
+  cadence-web:
+    image: ubercadence/web:latest
+    container_name: cosmosbdr_cadence_web
     ports:
-      - "${TEMPORAL_UI_PORT:-8233}:8080"
+      - "${CADENCE_UI_PORT:-8088}:8088"
+    volumes:
+      - ./cadence-web-config.json:/etc/cadence-web/config/development.json # <-- Mounts your file into the container
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
+      - CADENCE_GRPC_PEERS=cadence:7833
+      - CADENCE_HISTORY_PAGE_V2_ENABLED=OPT_OUT
     depends_on:
-      - temporal
+      - cadence
+
+  cadence-register-domain:
+    image: ubercadence/cli:master
+    container_name: cosmosbdr_domain_migrator
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Cadence to start..."
+        while ! nc -z cadence 7933 2>/dev/null; do
+          sleep 1
+        done
+        echo "Cadence is up! Registering domain..."
+        cadence --address cadence:7933 --domain samples-domain domain register
+    depends_on:
+      - cadence
 
   atlas-migrate:
     image: arigaio/atlas:latest
@@ -81,7 +100,8 @@ services:
     environment:
       - POSTGRES_DB_HOST=postgres
       - SEAWEED_ENDPOINT=http://seaweedfs:8333
-      - TEMPORAL_GRPC_HOST=temporal
+      - CADENCE_GRPC_HOST=cadence
+      - CADENCE_GRPC_PORT=7933
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,8 +109,10 @@ services:
         condition: service_completed_successfully
       seaweedfs:
         condition: service_started
-      temporal:
+      cadence:
         condition: service_started
+      cadence-register-domain:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

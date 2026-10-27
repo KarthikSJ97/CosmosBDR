@@ -28,11 +28,11 @@ type Config struct {
 	SeaweedSecretKey string
 	SeaweedBucket    string
 
-	// Temporal workflow orchestartor
-	TemporalGRPCHost string
-	TemporalGRPCPort int
-	TemporalUIHost   string
-	TemporalUIPort   int
+	// Cadence workflow orchestartor
+	CadenceGRPCHost string
+	CadenceGRPCPort int
+	CadenceUIHost   string
+	CadenceUIPort   int
 
 	// Other
 	EncryptionKey        string // 32 bytes hex or string for AES-256
@@ -65,9 +65,9 @@ func LoadConfig() *Config {
 		SeaweedSecretKey: getEnvString("SEAWEED_SECRET_KEY", "dummy"),
 		SeaweedBucket:    getEnvString("SEAWEED_BUCKET", "bucket"),
 
-		// Temporal workflow orchestartor
-		TemporalGRPCHost: getEnvString("TEMPORAL_GRPC_HOST", "localhost"),
-		TemporalGRPCPort: getEnvInt("TEMPORAL_GRPC_PORT", 7233),
+		// Cadence workflow orchestartor
+		CadenceGRPCHost: getEnvString("CADENCE_GRPC_HOST", "localhost"),
+		CadenceGRPCPort: getEnvInt("CADENCE_GRPC_PORT", 7233),
 
 		// Other
 		EncryptionKey:        getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev

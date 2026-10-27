@@ -1,12 +1,12 @@
-package routes
+package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
-	temporalClient "go.temporal.io/sdk/client"
+	cadenceClient "go.uber.org/cadence/client"
 )
 
 // HandlerRegistry registers all API endpoints onto the Fiber app instance
-func HandlerRegistry(app *fiber.App, temporalClient temporalClient.Client) {
+func HandlerRegistry(app *fiber.App, cadenceClient cadenceClient.Client) {
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "healthy",
@@ -20,6 +20,6 @@ func HandlerRegistry(app *fiber.App, temporalClient temporalClient.Client) {
 			"message": "CosmosBDR control plane active",
 		})
 	})
-	backupHandler := NewBackupHandler(temporalClient)
+	backupHandler := NewBackupHandler(cadenceClient)
 	v1.Post("/backups", backupHandler.TriggerBackup)
 }
