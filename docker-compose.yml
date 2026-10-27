@@ -70,7 +70,7 @@ services:
           sleep 1
         done
         echo "Cadence is up! Registering domain..."
-        cadence --address cadence:7933 --domain samples-domain domain register
+        cadence --address cadence:7933 --domain samples-domain domain register || echo "Domain already exists, continuing..."
     depends_on:
       - cadence
 

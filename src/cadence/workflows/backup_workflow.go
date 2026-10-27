@@ -22,7 +22,8 @@ type BackupWorkflowResponse struct {
 func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*BackupWorkflowResponse, error) {
 	// Configure activity options (timeouts, retries)
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 30 * time.Second,
+		StartToCloseTimeout:    30 * time.Second,
+		ScheduleToStartTimeout: 5 * time.Minute,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
