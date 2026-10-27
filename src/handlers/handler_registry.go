@@ -2,10 +2,11 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
+	temporalClient "go.temporal.io/sdk/client"
 )
 
-// RegisterRoutes registers all API endpoints onto the Fiber app instance
-func RegisterRoutes(app *fiber.App) {
+// HandlerRegistry registers all API endpoints onto the Fiber app instance
+func HandlerRegistry(app *fiber.App, temporalClient temporalClient.Client) {
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"status":  "healthy",
@@ -19,4 +20,6 @@ func RegisterRoutes(app *fiber.App) {
 			"message": "CosmosBDR control plane active",
 		})
 	})
+	backupHandler := NewBackupHandler(temporalClient)
+	v1.Post("/backups", backupHandler.TriggerBackup)
 }
