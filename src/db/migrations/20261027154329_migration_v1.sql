@@ -1,3 +1,5 @@
+-- Add new schema named "atlas_schema_revisions"
+CREATE SCHEMA "atlas_schema_revisions";
 -- Create "chunks" table
 CREATE TABLE "public"."chunks" (
   "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
@@ -11,6 +13,22 @@ CREATE TABLE "public"."chunks" (
 );
 -- Create index "idx_chunks_chunk_hash" to table: "chunks"
 CREATE UNIQUE INDEX "idx_chunks_chunk_hash" ON "public"."chunks" ("chunk_hash");
+-- Create "atlas_schema_revisions" table
+CREATE TABLE "atlas_schema_revisions"."atlas_schema_revisions" (
+  "version" character varying NOT NULL,
+  "description" character varying NOT NULL,
+  "type" bigint NOT NULL DEFAULT 2,
+  "applied" bigint NOT NULL DEFAULT 0,
+  "total" bigint NOT NULL DEFAULT 0,
+  "executed_at" timestamptz NOT NULL,
+  "execution_time" bigint NOT NULL,
+  "error" text NULL,
+  "error_stmt" text NULL,
+  "hash" character varying NOT NULL,
+  "partial_hashes" jsonb NULL,
+  "operator_version" character varying NOT NULL,
+  PRIMARY KEY ("version")
+);
 -- Create "jobs" table
 CREATE TABLE "public"."jobs" (
   "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),

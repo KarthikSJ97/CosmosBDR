@@ -55,6 +55,22 @@ services:
     depends_on:
       - temporal
 
+  atlas-migrate:
+    image: arigaio/atlas:latest
+    container_name: cosmosbdr_migrator
+    volumes:
+      - ./src/db/migrations:/migrations
+    command:
+      - migrate
+      - apply
+      - --dir
+      - file:///migrations
+      - --url
+      - postgres://postgres:postgres@postgres:5432/cosmosbdr?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy    
+
   cosmosbdr:
     build: .
     container_name: cosmosbdr_app
@@ -69,6 +85,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      atlas-migrate:
+        condition: service_completed_successfully
       seaweedfs:
         condition: service_started
       temporal:

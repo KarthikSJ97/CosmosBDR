@@ -1,12 +1,9 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strconv"
-
-	"gorm.io/driver/postgres"
 
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db"
@@ -15,7 +12,6 @@ import (
 	"cosmosbdr/src/temporal"
 
 	"github.com/gofiber/fiber/v2"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -34,16 +30,6 @@ func main() {
 		log.Printf("Warning: Could not connect to PostgreSQL pool: %v.", err)
 	} else {
 		defer dbPool.Close()
-	}
-
-	// Initialize GORM for the fallback auto-migration
-	gormDB, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
-	if err != nil {
-		log.Fatalf("Failed to initialize GORM: %v", err)
-	}
-
-	if err := db.RunMigrations(context.Background(), dbPool, gormDB, cfg.PostgresDBMigrationsDirectory); err != nil {
-		log.Fatalf("Migration failed: %v", err)
 	}
 
 	// 3. Initialize SeaweedFS Storage Client
