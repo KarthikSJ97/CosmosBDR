@@ -62,3 +62,9 @@ type CompleteJobItemResponse struct {
 	ItemID string `json:"item_id"`
 	Status string `json:"status"`
 }
+
+type FinalizeJobRequest struct {
+	JobID        string  `json:"job_id"`
+	Status       string  `json:"status"`        // "SUCCESS" or "FAILED"
+	ErrorMessage *string `json:"error_message"` // Populated if status is FAILED
+}
