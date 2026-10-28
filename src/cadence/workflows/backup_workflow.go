@@ -123,10 +123,20 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 		return nil, fmt.Errorf("failed to execute CompleteJobItemActivity: %w", err)
 	}
 
-	workflow.GetLogger(ctx).Info("All chunks processed and job item marked complete", 
-		zap.String("job_id", actResp.Job.ID), 
+	workflow.GetLogger(ctx).Info("All chunks processed and job item marked complete",
+		zap.String("job_id", actResp.Job.ID),
 		zap.String("item_id", finalizeResp.ItemID),
 	)
+
+	// Final Step: Finalize job as SUCCESS
+	finalizeJobReq := types.FinalizeJobRequest{
+		JobID:  actResp.Job.ID,
+		Status: "SUCCESS",
+	}
+	err = workflow.ExecuteActivity(ctx, jobActivities.FinalizeJobActivity, finalizeJobReq).Get(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to finalize job status: %w", err)
+	}
 
 	return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 }
