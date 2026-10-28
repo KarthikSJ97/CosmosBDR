@@ -11,6 +11,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	go.uber.org/cadence v1.4.0
 	go.uber.org/yarpc v1.88.0
+	go.uber.org/zap v1.27.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
@@ -84,7 +85,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/net/metrics v1.4.0 // indirect
 	go.uber.org/thriftrw v1.32.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.41.0 // indirect
