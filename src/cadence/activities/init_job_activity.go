@@ -29,7 +29,7 @@ func (ja *JobActivities) InitJobActivity(ctx context.Context, request InitJobReq
 
 	job := &schema.Job{
 		FlowType:   request.FlowType,
-		Status:     "IN_PROGRESS",
+		Status:     "CREATED",
 		SourcePath: request.SourcePath,
 		TargetPath: &request.TargetPath,
 		Payload:    request.Payload,

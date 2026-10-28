@@ -44,5 +44,18 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 		return nil, err
 	}
 
+	// Update the job status to IN_PROGRESS
+	statusInput := activities.UpdateJobStatusRequest{
+		JobID:  actResp.JobID,
+		Status: "IN_PROGRESS",
+	}
+
+	err = workflow.ExecuteActivity(ctx, jobActivities.UpdateJobStatusActivity, statusInput).Get(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Next steps (e.g. pending job picker, file checking, chunking, and parallel SeaweedFS uploads)
+
 	return &BackupWorkflowResponse{JobID: actResp.JobID}, nil
 }

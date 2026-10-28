@@ -9,7 +9,7 @@ import (
 type Job struct {
 	ID           string         `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	FlowType     string         `gorm:"type:varchar(50);not null;index:idx_jobs_flow_status"`
-	Status       string         `gorm:"type:varchar(50);not null;default:'IN_PROGRESS';index:idx_jobs_flow_status"`
+	Status       string         `gorm:"type:varchar(50);not null;default:'CREATED';index:idx_jobs_flow_status"`
 	SourcePath   string         `gorm:"type:text;not null"`
 	TargetPath   *string        `gorm:"type:text"`
 	TotalItems   int64          `gorm:"default:0"`
