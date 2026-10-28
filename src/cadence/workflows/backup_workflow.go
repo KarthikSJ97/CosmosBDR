@@ -122,7 +122,21 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 		}
 	}
 
-	workflow.GetLogger(ctx).Info("All chunks processed successfully", zap.String("job_id", actResp.Job.ID), zap.Int("total_chunks", len(futures)))
+	// NEW: 7. Finalize and mark the file transaction row as COMPLETED
+	finalizeReq := activities.CompleteJobItemRequest{
+		JobID:  actResp.Job.ID,
+		ItemID: inspectResponse.JobItem.ID,
+	}
+	var finalizeResp activities.CompleteJobItemResponse
+	err = workflow.ExecuteActivity(ctx, jobActivities.CompleteJobItemActivity, finalizeReq).Get(ctx, &finalizeResp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute CompleteJobItemActivity: %w", err)
+	}
+
+	workflow.GetLogger(ctx).Info("All chunks processed and job item marked complete", 
+		zap.String("job_id", actResp.Job.ID), 
+		zap.String("item_id", finalizeResp.ItemID),
+	)
 
 	return &BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 }
