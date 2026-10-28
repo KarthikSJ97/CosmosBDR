@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"cosmosbdr/src/cadence/workflows"
+	"cosmosbdr/src/types"
 	"fmt"
 	"time"
 
@@ -18,8 +19,8 @@ func NewBackupHandler(cadenceClient cadenceClient.Client) *BackupHandler {
 	return &BackupHandler{CadenceClient: cadenceClient}
 }
 
-func (h *BackupHandler) TriggerBackup(c *fiber.Ctx) error {
-	var req workflows.BackupWorkflowRequest
+func (h BackupHandler) TriggerBackup(c *fiber.Ctx) error {
+	var req types.BackupWorkflowRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body: " + err.Error(),

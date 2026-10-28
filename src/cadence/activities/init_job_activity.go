@@ -3,37 +3,14 @@ package activities
 import (
 	"context"
 	"cosmosbdr/src/db/schema"
-	"cosmosbdr/src/repositories"
+	"cosmosbdr/src/types"
 	"encoding/json"
 	"fmt"
 
 	"gorm.io/datatypes"
 )
 
-type JobActivities struct {
-	JobRepo     *repositories.JobRepository
-	JobItemRepo *repositories.JobItemRepository
-	ChunkRepo   *repositories.ChunkRepository
-}
-
-type InitJobRequest struct {
-	FlowType   string
-	SourcePath string
-	TargetPath string
-	Payload    BackupJobPayload
-}
-
-// BackupJobPayload defines the specific file details inside the payload
-type BackupJobPayload struct {
-	FileName     string `json:"file_name"`
-	RelativePath string `json:"relative_path,omitempty"`
-}
-
-type InitJobResponse struct {
-	Job *schema.Job
-}
-
-func (ja *JobActivities) InitJobActivity(ctx context.Context, request InitJobRequest) (*InitJobResponse, error) {
+func (ja *JobActivities) InitJobActivity(ctx context.Context, request types.InitJobRequest) (*types.InitJobResponse, error) {
 	payloadBytes, err := json.Marshal("")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload struct: %w", err)
@@ -51,5 +28,5 @@ func (ja *JobActivities) InitJobActivity(ctx context.Context, request InitJobReq
 		return nil, fmt.Errorf("failed to initialize job via repository: %w", err)
 	}
 
-	return &InitJobResponse{Job: job}, nil
+	return &types.InitJobResponse{Job: job}, nil
 }

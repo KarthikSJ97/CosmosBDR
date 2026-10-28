@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"cosmosbdr/src/cadence/activities"
+	"cosmosbdr/src/types"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -11,18 +12,7 @@ import (
 	"go.uber.org/cadence/workflow"
 )
 
-type BackupWorkflowRequest struct {
-	FlowType   string                      `json:"flow_type"`
-	SourcePath string                      `json:"source_path"`
-	TargetPath string                      `json:"target_path"`
-	Payload    activities.BackupJobPayload `json:"payload"`
-}
-
-type BackupWorkflowResponse struct {
-	JobID string
-}
-
-func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*BackupWorkflowResponse, error) {
+func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (*types.BackupWorkflowResponse, error) {
 	// 1. Configure activity options (timeouts, retries)
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout:    120 * time.Second, // Increased to account for chunk file I/O & hashing
@@ -31,14 +21,14 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	// 2. Initialize Job record via activity
-	actReq := activities.InitJobRequest{
+	actReq := types.InitJobRequest{
 		FlowType:   request.FlowType,
 		SourcePath: request.SourcePath,
 		TargetPath: request.TargetPath,
 		Payload:    request.Payload,
 	}
 
-	var actResp activities.InitJobResponse
+	var actResp types.InitJobResponse
 	var jobActivities *activities.JobActivities
 
 	err := workflow.ExecuteActivity(ctx, jobActivities.InitJobActivity, actReq).Get(ctx, &actResp)
@@ -47,7 +37,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	}
 
 	// 3. Update the job status to IN_PROGRESS
-	statusInput := activities.UpdateJobStatusRequest{
+	statusInput := types.UpdateJobStatusRequest{
 		JobID:  actResp.Job.ID,
 		Status: "IN_PROGRESS",
 	}
@@ -57,11 +47,11 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	}
 
 	// 4. Inspect file for duplicate/change checking rules
-	inspectRequest := activities.InspectFileRequest{
+	inspectRequest := types.InspectFileRequest{
 		JobID:    actResp.Job.ID,
 		ItemPath: filepath.Join(actResp.Job.SourcePath, request.Payload.FileName),
 	}
-	var inspectResponse activities.InspectFileResponse
+	var inspectResponse types.InspectFileResponse
 	err = workflow.ExecuteActivity(ctx, jobActivities.InspectFileActivity, inspectRequest).Get(ctx, &inspectResponse)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute InspectFileActivity: %w", err)
@@ -71,7 +61,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	if inspectResponse.Action == "SKIP" {
 		// Log message via replay-safe cadence logger
 		workflow.GetLogger(ctx).Info("File processing skipped due to deduplication baseline match", zap.String("path", inspectRequest.ItemPath))
-		return &BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
+		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 	}
 
 	// CASE 2: File is new or changed -> Begin Parallel Chunking Pipeline
@@ -79,7 +69,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	if fileSize == 0 {
 		// Handle empty file edge case safely: No chunks needed
 		workflow.GetLogger(ctx).Info("File is empty, skipping chunk processing segments", zap.String("path", inspectRequest.ItemPath))
-		return &BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
+		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 	}
 
 	// 5. Calculate chunk segmentation array configurations
@@ -96,7 +86,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 			length = fileSize - offset // Truncate segment bounds for remaining tail bytes
 		}
 
-		chunkReq := activities.ProcessFileChunkRequest{
+		chunkReq := types.ProcessFileChunkRequest{
 			JobID:       actResp.Job.ID,
 			ItemID:      inspectResponse.JobItem.ID,
 			ItemPath:    inspectRequest.ItemPath,
@@ -115,7 +105,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 
 	// 6. Gather and synchronize all concurrent thread executions (Fan-in)
 	for i, future := range futures {
-		var chunkResp activities.ProcessFileChunkResponse
+		var chunkResp types.ProcessFileChunkResponse
 		err := future.Get(ctx, &chunkResp)
 		if err != nil {
 			return nil, fmt.Errorf("parallel chunk processing failed at index %d: %w", i, err)
@@ -123,11 +113,11 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 	}
 
 	// NEW: 7. Finalize and mark the file transaction row as COMPLETED
-	finalizeReq := activities.CompleteJobItemRequest{
+	finalizeReq := types.CompleteJobItemRequest{
 		JobID:  actResp.Job.ID,
 		ItemID: inspectResponse.JobItem.ID,
 	}
-	var finalizeResp activities.CompleteJobItemResponse
+	var finalizeResp types.CompleteJobItemResponse
 	err = workflow.ExecuteActivity(ctx, jobActivities.CompleteJobItemActivity, finalizeReq).Get(ctx, &finalizeResp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute CompleteJobItemActivity: %w", err)
@@ -138,5 +128,5 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 		zap.String("item_id", finalizeResp.ItemID),
 	)
 
-	return &BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
+	return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 }

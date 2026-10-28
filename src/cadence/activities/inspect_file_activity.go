@@ -8,44 +8,28 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
+	"cosmosbdr/src/types"
 
 	"cosmosbdr/src/db/schema"
 
 	"gorm.io/datatypes"
 )
 
-type InspectFileRequest struct {
-	JobID    string
-	ItemPath string
-}
-
-type InspectFileResponse struct {
-	Action  string // "SKIP" or "PROCEED_TO_CHUNK"
-	JobItem *schema.JobItem
-	Reason  string
-}
-
-type ItemMetadata struct {
-	LastModifiedAt time.Time `json:"last_modified_at"`
-	FingerprintAlg string    `json:"fingerprint_alg"` // e.g., "sha256"
-}
-
-func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectFileRequest) (InspectFileResponse, error) {
+func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.InspectFileRequest) (types.InspectFileResponse, error) {
 	if input.ItemPath == "" {
-		return InspectFileResponse{}, fmt.Errorf("itemPath cannot be empty")
+		return types.InspectFileResponse{}, fmt.Errorf("itemPath cannot be empty")
 	}
 
 	// 1. Fetch filesystem properties
 	info, err := os.Stat(input.ItemPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return InspectFileResponse{}, fmt.Errorf("source file does not exist: %s", input.ItemPath)
+			return types.InspectFileResponse{}, fmt.Errorf("source file does not exist: %s", input.ItemPath)
 		}
-		return InspectFileResponse{}, fmt.Errorf("failed to stat file: %w", err)
+		return types.InspectFileResponse{}, fmt.Errorf("failed to stat file: %w", err)
 	}
 	if info.IsDir() {
-		return InspectFileResponse{}, fmt.Errorf("path is a directory: %s", input.ItemPath)
+		return types.InspectFileResponse{}, fmt.Errorf("path is a directory: %s", input.ItemPath)
 	}
 
 	currentSize := info.Size()
@@ -54,7 +38,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 	// 2. Fetch latest historical backup record
 	historicalItem, err := ja.JobItemRepo.GetLatestCompletedItemByPath(ctx, input.ItemPath)
 	if err != nil {
-		return InspectFileResponse{}, err
+		return types.InspectFileResponse{}, err
 	}
 
 	// 3. Initialize the new JobItem model skeleton [4]
@@ -76,7 +60,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 
 	} else {
 		// Parse existing metadata out of the historical record
-		var histMeta ItemMetadata
+		var histMeta types.ItemMetadata
 		_ = json.Unmarshal(historicalItem.ItemMetadata, &histMeta)
 
 		// Tier 1 & 2: Match Size AND Modification Time
@@ -85,7 +69,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 			// Tier 3: Verify File Integrity with a Hash Check [4]
 			currentHash, err := calculateFileHash(input.ItemPath)
 			if err != nil {
-				return InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
+				return types.InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
 			}
 
 			if historicalItem.Checksum == currentHash {
@@ -109,7 +93,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 
 	// 5. Populate Metadata if compiling a new chunk sequence
 	if !shouldCloneChunks {
-		metaObj := ItemMetadata{
+		metaObj := types.ItemMetadata{
 			LastModifiedAt: currentModTime,
 			FingerprintAlg: "sha256",
 		}
@@ -119,17 +103,17 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 
 	// 6. Persist to Database [4]
 	if err := ja.JobItemRepo.CreateJobItem(newJobItem); err != nil {
-		return InspectFileResponse{}, fmt.Errorf("failed to create job item: %w", err)
+		return types.InspectFileResponse{}, fmt.Errorf("failed to create job item: %w", err)
 	}
 
 	// 7. Clone reference vectors if skipped [4]
 	if shouldCloneChunks {
 		if err := ja.JobItemRepo.CloneChunksFromItem(ctx, historicalItem.ID, newJobItem.ID); err != nil {
-			return InspectFileResponse{}, fmt.Errorf("failed to link historical chunks: %w", err)
+			return types.InspectFileResponse{}, fmt.Errorf("failed to link historical chunks: %w", err)
 		}
 	}
 
-	return InspectFileResponse{
+	return types.InspectFileResponse{
 		Action:  action,
 		JobItem: newJobItem,
 		Reason:  reason,

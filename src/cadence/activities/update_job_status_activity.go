@@ -3,14 +3,10 @@ package activities
 import (
 	"context"
 	"fmt"
+	"cosmosbdr/src/types"
 )
 
-type UpdateJobStatusRequest struct {
-	JobID  string
-	Status string
-}
-
-func (ja *JobActivities) UpdateJobStatusActivity(ctx context.Context, input UpdateJobStatusRequest) error {
+func (ja *JobActivities) UpdateJobStatusActivity(ctx context.Context, input types.UpdateJobStatusRequest) error {
 	if input.JobID == "" || input.Status == "" {
 		return fmt.Errorf("jobID and status cannot be empty")
 	}
