@@ -2,14 +2,22 @@ package activities
 
 import (
 	"context"
-	"cosmosbdr/src/db/schema"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"time"
+
+	"cosmosbdr/src/db/schema"
+
+	"gorm.io/datatypes"
 )
 
 type InspectFileRequest struct {
 	JobID    string
-	ItemPath string // Absolute path of the file on localhost
+	ItemPath string
 }
 
 type InspectFileResponse struct {
@@ -18,74 +26,103 @@ type InspectFileResponse struct {
 	Reason  string
 }
 
+type ItemMetadata struct {
+	LastModifiedAt time.Time `json:"last_modified_at"`
+	FingerprintAlg string    `json:"fingerprint_alg"` // e.g., "sha256"
+}
+
 func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectFileRequest) (InspectFileResponse, error) {
 	if input.ItemPath == "" {
 		return InspectFileResponse{}, fmt.Errorf("itemPath cannot be empty")
 	}
 
-	// 1. Check if source file exists on localhost
+	// 1. Fetch filesystem properties
 	info, err := os.Stat(input.ItemPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return InspectFileResponse{}, fmt.Errorf("source file does not exist at path: %s", input.ItemPath)
+			return InspectFileResponse{}, fmt.Errorf("source file does not exist: %s", input.ItemPath)
 		}
-		return InspectFileResponse{}, fmt.Errorf("failed to stat source file: %w", err)
+		return InspectFileResponse{}, fmt.Errorf("failed to stat file: %w", err)
 	}
-
 	if info.IsDir() {
-		return InspectFileResponse{}, fmt.Errorf("path is a directory, expected a file for current E2E scope: %s", input.ItemPath)
+		return InspectFileResponse{}, fmt.Errorf("path is a directory: %s", input.ItemPath)
 	}
 
 	currentSize := info.Size()
+	currentModTime := info.ModTime()
 
-	// 2. Fetch historical records
+	// 2. Fetch latest historical backup record
 	historicalItem, err := ja.JobItemRepo.GetLatestCompletedItemByPath(ctx, input.ItemPath)
 	if err != nil {
 		return InspectFileResponse{}, err
 	}
 
-	// 3. Initialize the new JobItem skeleton
+	// 3. Initialize the new JobItem model skeleton [4]
 	newJobItem := &schema.JobItem{
 		JobID:        input.JobID,
 		ItemPath:     input.ItemPath,
 		OriginalSize: currentSize,
-		Status:       "PENDING", // Default status for new/modified files
+		Status:       "PENDING", // [4]
 	}
 
 	var action string
 	var reason string
 	var shouldCloneChunks bool
 
-	// 4. Decision Ladder (Pure Logic, No Writes)
+	// 4. Enhanced Decision Pipeline
 	if historicalItem == nil {
-		// CASE 1: Completely New File
 		action = "PROCEED_TO_CHUNK"
 		reason = "No previous backup history found for this file"
 
-	} else if historicalItem.OriginalSize == currentSize {
-		// CASE 2: Unchanged File -> SKIPPED
-		action = "SKIP"
-		reason = "File size matches historical record; no changes detected"
-
-		// Set properties inherited from history
-		newJobItem.Status = "SKIPPED"
-		newJobItem.ProcessedSize = historicalItem.ProcessedSize
-		newJobItem.Checksum = historicalItem.Checksum
-		newJobItem.ItemMetadata = historicalItem.ItemMetadata
-		shouldCloneChunks = true
-
 	} else {
-		// CASE 3: Modified File -> PROCEED_TO_CHUNK
-		action = "PROCEED_TO_CHUNK"
-		reason = fmt.Sprintf("File size changed from %d to %d bytes", historicalItem.OriginalSize, currentSize)
+		// Parse existing metadata out of the historical record
+		var histMeta ItemMetadata
+		_ = json.Unmarshal(historicalItem.ItemMetadata, &histMeta)
+
+		// Tier 1 & 2: Match Size AND Modification Time
+		if historicalItem.OriginalSize == currentSize && histMeta.LastModifiedAt.Equal(currentModTime) {
+
+			// Tier 3: Verify File Integrity with a Hash Check [4]
+			currentHash, err := calculateFileHash(input.ItemPath)
+			if err != nil {
+				return InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
+			}
+
+			if historicalItem.Checksum == currentHash {
+				action = "SKIP"
+				reason = "File size, modification time, and cryptographic hash match perfectly; skipping backup"
+
+				newJobItem.Status = "SKIPPED" // [4]
+				newJobItem.ProcessedSize = historicalItem.ProcessedSize
+				newJobItem.Checksum = historicalItem.Checksum
+				newJobItem.ItemMetadata = historicalItem.ItemMetadata
+				shouldCloneChunks = true
+			} else {
+				action = "PROCEED_TO_CHUNK"
+				reason = "File size and mod-time matched, but cryptographic content checksum changed"
+			}
+		} else {
+			action = "PROCEED_TO_CHUNK"
+			reason = fmt.Sprintf("File properties altered. Old Size: %d, New Size: %d", historicalItem.OriginalSize, currentSize)
+		}
 	}
 
-	// 5. Single Database Write (Unified execution)
+	// 5. Populate Metadata if compiling a new chunk sequence
+	if !shouldCloneChunks {
+		metaObj := ItemMetadata{
+			LastModifiedAt: currentModTime,
+			FingerprintAlg: "sha256",
+		}
+		metaBytes, _ := json.Marshal(metaObj)
+		newJobItem.ItemMetadata = datatypes.JSON(metaBytes)
+	}
+
+	// 6. Persist to Database [4]
 	if err := ja.JobItemRepo.CreateJobItem(newJobItem); err != nil {
 		return InspectFileResponse{}, fmt.Errorf("failed to create job item: %w", err)
 	}
 
-	// 6. Post-write operational side-effects (Optional chunk replication)
+	// 7. Clone reference vectors if skipped [4]
 	if shouldCloneChunks {
 		if err := ja.JobItemRepo.CloneChunksFromItem(ctx, historicalItem.ID, newJobItem.ID); err != nil {
 			return InspectFileResponse{}, fmt.Errorf("failed to link historical chunks: %w", err)
@@ -97,4 +134,20 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input InspectF
 		JobItem: newJobItem,
 		Reason:  reason,
 	}, nil
+}
+
+// Helper function to efficiently compute SHA-256 hash of a file
+func calculateFileHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
