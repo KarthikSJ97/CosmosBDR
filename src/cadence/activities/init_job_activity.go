@@ -13,6 +13,7 @@ import (
 type JobActivities struct {
 	JobRepo     *repositories.JobRepository
 	JobItemRepo *repositories.JobItemRepository
+	ChunkRepo   *repositories.ChunkRepository
 }
 
 type InitJobRequest struct {
