@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"cosmosbdr/src/db/schema"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -74,4 +76,44 @@ func (r *JobItemRepository) CloneChunksFromItem(ctx context.Context, historicalI
 	}
 
 	return nil
+}
+
+func (r *JobItemRepository) CompleteJobItem(ctx context.Context, itemID string) error {
+	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Sum up the length of all successfully mapped chunks for this file
+		var totalProcessedSize int64
+		err := tx.Model(&schema.ItemChunk{}).
+			Where("item_id = ?", itemID).
+			Select("COALESCE(SUM(length_bytes), 0)").
+			Scan(&totalProcessedSize).Error
+		if err != nil {
+			return fmt.Errorf("failed to aggregate chunk sizes: %w", err)
+		}
+
+		// 2. Fetch all chunk IDs in order to build a deterministic file-level manifest/checksum hash if needed
+		var chunks []schema.ItemChunk
+		err = tx.Where("item_id = ?", itemID).Order("chunk_index ASC").Find(&chunks).Error
+		if err != nil {
+			return fmt.Errorf("failed to fetch chunks for checksum layout: %w", err)
+		}
+
+		// Generate a composite hash using all chunk hashes to represent the complete virtual file asset version
+		h := sha256.New()
+		for _, c := range chunks {
+			h.Write([]byte(c.ChunkID))
+		}
+		compositeChecksum := hex.EncodeToString(h.Sum(nil))
+
+		// 3. Update the JobItem state to terminal COMPLETED
+		err = tx.Model(&schema.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
+			"status":         "COMPLETED",
+			"processed_size": totalProcessedSize,
+			"checksum":       compositeChecksum,
+		}).Error
+		if err != nil {
+			return fmt.Errorf("failed to finalize job item record: %w", err)
+		}
+
+		return nil
+	})
 }
