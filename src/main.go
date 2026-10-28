@@ -63,7 +63,8 @@ func main() {
 
 	// 5. Initialize Repositories and Activities for the Worker
 	jobRepo := repositories.NewJobRepository(gormDB)
-	jobActivities := &activities.JobActivities{JobRepo: jobRepo}
+	jobItemRepo := repositories.NewJobItemRepository(gormDB)
+	jobActivities := &activities.JobActivities{JobRepo: jobRepo, JobItemRepo: jobItemRepo}
 
 	// 6. Start Cadence Worker in a background goroutine using NewV2
 	domain := "samples-domain"
@@ -83,6 +84,7 @@ func main() {
 	w.RegisterWorkflow(workflows.BackupWorkflow)
 	w.RegisterActivity(jobActivities.InitJobActivity)
 	w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
+	w.RegisterActivity(jobActivities.InspectFileActivity)
 
 	go func() {
 		log.Println("Starting Cadence Worker...")

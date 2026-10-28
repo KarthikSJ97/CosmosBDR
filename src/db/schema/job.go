@@ -3,6 +3,7 @@ package schema
 import (
 	"time"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -15,7 +16,7 @@ type Job struct {
 	TotalItems   int64          `gorm:"default:0"`
 	TotalBytes   int64          `gorm:"default:0"`
 	ErrorMessage *string        `gorm:"type:text"`
-	Payload      []byte         `gorm:"type:jsonb;default:'{}'"`
+	Payload      datatypes.JSON `gorm:"type:jsonb;default:'{}'"`
 	CreatedAt    time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt    gorm.DeletedAt `gorm:"index"`

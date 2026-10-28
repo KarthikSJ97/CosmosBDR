@@ -2,17 +2,17 @@ package workflows
 
 import (
 	"cosmosbdr/src/cadence/activities"
-	"encoding/json"
+	"path/filepath"
 	"time"
 
 	"go.uber.org/cadence/workflow"
 )
 
 type BackupWorkflowRequest struct {
-	FlowType   string          `json:"flow_type"`
-	SourcePath string          `json:"source_path"`
-	TargetPath string          `json:"target_path"`
-	Payload    json.RawMessage `json:"payload"`
+	FlowType   string                      `json:"flow_type"`
+	SourcePath string                      `json:"source_path"`
+	TargetPath string                      `json:"target_path"`
+	Payload    activities.BackupJobPayload `json:"payload"`
 }
 
 type BackupWorkflowResponse struct {
@@ -46,7 +46,7 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 
 	// Update the job status to IN_PROGRESS
 	statusInput := activities.UpdateJobStatusRequest{
-		JobID:  actResp.JobID,
+		JobID:  actResp.Job.ID,
 		Status: "IN_PROGRESS",
 	}
 
@@ -55,7 +55,17 @@ func BackupWorkflow(ctx workflow.Context, request BackupWorkflowRequest) (*Backu
 		return nil, err
 	}
 
-	// TODO: Next steps (e.g. pending job picker, file checking, chunking, and parallel SeaweedFS uploads)
+	inspectRequest := activities.InspectFileRequest{
+		JobID:    actResp.Job.ID,
+		ItemPath: filepath.Join(actResp.Job.SourcePath, request.Payload.FileName),
+	}
+	var inspectResponse activities.InspectFileResponse
+	err = workflow.ExecuteActivity(ctx, jobActivities.InspectFileActivity, inspectRequest).Get(ctx, &inspectResponse)
+	if err != nil {
+		return nil, err
+	}
 
-	return &BackupWorkflowResponse{JobID: actResp.JobID}, nil
+	// TODO: Next step -> Split file into chunks, hash, and upload to SeaweedFS in parallel
+
+	return &BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 }
