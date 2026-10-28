@@ -79,8 +79,10 @@ func main() {
 		log.Fatalf("Failed to create Cadence worker: %v", err)
 	}
 
+	// Register the workfows and activities here
 	w.RegisterWorkflow(workflows.BackupWorkflow)
 	w.RegisterActivity(jobActivities.InitJobActivity)
+	w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
 
 	go func() {
 		log.Println("Starting Cadence Worker...")
