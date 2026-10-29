@@ -65,7 +65,7 @@ func main() {
 	jobRepo := repositories.NewJobRepository(gormDB)
 	jobItemRepo := repositories.NewJobItemRepository(gormDB)
 	chunkRepo := repositories.NewChunkRepository(gormDB)
-	jobActivities := &activities.JobActivities{JobRepo: jobRepo, JobItemRepo: jobItemRepo, ChunkRepo: chunkRepo}
+	jobActivities := &activities.JobActivities{JobRepo: jobRepo, JobItemRepo: jobItemRepo, ChunkRepo: chunkRepo, Seaweed: seaweedClient}
 
 	// 6. Start Cadence Worker in a background goroutine using NewV2
 	domain := "samples-domain"

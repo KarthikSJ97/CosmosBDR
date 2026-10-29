@@ -1,6 +1,7 @@
 package activities
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,9 @@ import (
 
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/types"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input types.ProcessFileChunkRequest) (types.ProcessFileChunkResponse, error) {
@@ -41,12 +45,13 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 	hasher.Write(buffer)
 	chunkHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// 5. Initialize the potential new global Chunk model structure
-	// Note: For now, we mock SeaweedKey with a unique string or the hash itself.
-	// You will later replace "mock-key-"+chunkHash with the actual SeaweedFS client upload key result.
+	// 5. Define the correct SeaweedFS storage key upfront
+	seaweedKey := fmt.Sprintf("chunks/%s", chunkHash)
+
+	// Initialize the potential new global Chunk model structure
 	potentialChunk := &schema.Chunk{
 		ChunkHash:           chunkHash,
-		SeaweedKey:          "seaweed://chunks/" + chunkHash,
+		SeaweedKey:          seaweedKey,
 		SizeBytes:           int64(bytesRead),
 		CompressedSizeBytes: int64(bytesRead), // Update when adding compression middleware
 	}
@@ -59,8 +64,18 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 
 	// 7. Physical Storage Engine Upload (If the block is completely unique)
 	if createdNew {
-		// TODO: Call your SeaweedFS client upload wrapper here using 'buffer'
-		// fmt.Printf("Uploading unique block to SeaweedFS: %s\n", resolvedChunk.ChunkHash)
+		if ja.Seaweed == nil || ja.Seaweed.Client == nil {
+			return types.ProcessFileChunkResponse{}, fmt.Errorf("seaweed client is not initialized")
+		}
+
+		_, err := ja.Seaweed.Client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(ja.Seaweed.Bucket),
+			Key:    aws.String(seaweedKey),
+			Body:   bytes.NewReader(buffer),
+		})
+		if err != nil {
+			return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to upload chunk to SeaweedFS: %w", err)
+		}
 	}
 
 	// 8. Persist the Intermediary Structural Mapping Reference Matrix Link

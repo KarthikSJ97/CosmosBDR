@@ -72,14 +72,6 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 			_ = json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta)
 		}
 
-		// --- DIAGNOSTIC LOG (TEMPORARY) ---
-		// Add this print statement to see if your struct properties are finally populated:
-		fmt.Printf("[DEBUG] Parsed ModTime from DB: %s, Current ModTime: %s\n",
-			histMeta.LastModifiedAt.UTC().Format(time.RFC3339),
-			info.ModTime().UTC().Format(time.RFC3339),
-		)
-		// ----------------------------------
-
 		// Standardize time formatting down to the second
 		currentModTime := info.ModTime().UTC().Truncate(time.Second)
 		histModTime := histMeta.LastModifiedAt.UTC().Truncate(time.Second)
