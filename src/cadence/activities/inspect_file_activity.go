@@ -2,13 +2,14 @@ package activities
 
 import (
 	"context"
+	"cosmosbdr/src/types"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"cosmosbdr/src/types"
+	"time"
 
 	"cosmosbdr/src/db/schema"
 
@@ -33,7 +34,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 	}
 
 	currentSize := info.Size()
-	currentModTime := info.ModTime()
+	currentModTime := info.ModTime().UTC().Truncate(time.Second)
 
 	// 2. Fetch latest historical backup record
 	historicalItem, err := ja.JobItemRepo.GetLatestCompletedItemByPath(ctx, input.ItemPath)
@@ -64,7 +65,8 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 		_ = json.Unmarshal(historicalItem.ItemMetadata, &histMeta)
 
 		// Tier 1 & 2: Match Size AND Modification Time
-		if historicalItem.OriginalSize == currentSize && histMeta.LastModifiedAt.Equal(currentModTime) {
+		histModTime := histMeta.LastModifiedAt.UTC().Truncate(time.Second)
+		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
 
 			// Tier 3: Verify File Integrity with a Hash Check [4]
 			currentHash, err := calculateFileHash(input.ItemPath)
