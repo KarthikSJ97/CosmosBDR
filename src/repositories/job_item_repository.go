@@ -23,9 +23,8 @@ func NewJobItemRepository(db *gorm.DB) *JobItemRepository {
 func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, itemPath string) (*schema.JobItem, error) {
 	var item schema.JobItem
 	err := r.DB.WithContext(ctx).
-		Table("job_items").
 		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ?", itemPath, "COMPLETED").
+		Where("job_items.item_path = ? AND jobs.status = ? AND job_items.status = ?", itemPath, "SUCCESS", "COMPLETED").
 		Order("job_items.created_at DESC").
 		First(&item).Error
 
@@ -80,34 +79,37 @@ func (r *JobItemRepository) CloneChunksFromItem(ctx context.Context, historicalI
 
 func (r *JobItemRepository) CompleteJobItem(ctx context.Context, itemID string) error {
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Sum up the length of all successfully mapped chunks for this file
-		var totalProcessedSize int64
-		err := tx.Model(&schema.ItemChunk{}).
-			Where("item_id = ?", itemID).
-			Select("COALESCE(SUM(length_bytes), 0)").
-			Scan(&totalProcessedSize).Error
-		if err != nil {
-			return fmt.Errorf("failed to aggregate chunk sizes: %w", err)
+		// 1. Join with the global chunk table to pull actual content hashes and their sizes
+		var chunks []struct {
+			ChunkHash string
+			SizeBytes int64
 		}
 
-		// 2. Fetch all chunk IDs in order to build a deterministic file-level manifest/checksum hash if needed
-		var chunks []schema.ItemChunk
-		err = tx.Where("item_id = ?", itemID).Order("chunk_index ASC").Find(&chunks).Error
+		// Note: We pull size_bytes from the chunks table to track actual written size
+		err := tx.Table("item_chunks").
+			Select("chunks.chunk_hash, chunks.size_bytes").
+			Joins("JOIN chunks ON chunks.id = item_chunks.chunk_id").
+			Where("item_chunks.item_id = ?", itemID).
+			Order("item_chunks.chunk_index ASC").
+			Scan(&chunks).Error
 		if err != nil {
-			return fmt.Errorf("failed to fetch chunks for checksum layout: %w", err)
+			return fmt.Errorf("failed to fetch content chunk hashes: %w", err)
 		}
 
-		// Generate a composite hash using all chunk hashes to represent the complete virtual file asset version
+		// 2. Compute a composite manifest signature and accumulate total processed size
 		h := sha256.New()
+		var totalProcessedSize int64 = 0
+
 		for _, c := range chunks {
-			h.Write([]byte(c.ChunkID))
+			h.Write([]byte(c.ChunkHash))
+			totalProcessedSize += c.SizeBytes // Accumulate byte counts smoothly here
 		}
 		compositeChecksum := hex.EncodeToString(h.Sum(nil))
 
 		// 3. Update the JobItem state to terminal COMPLETED
 		err = tx.Model(&schema.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
 			"status":         "COMPLETED",
-			"processed_size": totalProcessedSize,
+			"processed_size": totalProcessedSize, // Variable is now correctly declared and populated
 			"checksum":       compositeChecksum,
 		}).Error
 		if err != nil {

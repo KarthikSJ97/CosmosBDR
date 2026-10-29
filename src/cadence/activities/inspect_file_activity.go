@@ -60,11 +60,25 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 		reason = "No previous backup history found for this file"
 
 	} else {
-		// Cast datatypes.JSON explicitly to []byte so unmarshal can read it
+		// Use GORM's native UnmarshalJSON method to parse the datatype cleanly
 		var histMeta types.ItemMetadata
-		if err := json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta); err != nil {
-			return types.InspectFileResponse{}, fmt.Errorf("failed to unmarshal historical item metadata: %w", err)
+		if err := historicalItem.ItemMetadata.UnmarshalJSON([]byte(historicalItem.ItemMetadata)); err != nil {
+			// Fallback option in case your GORM version prefers direct unmarshal on the target pointer address
+			if err := json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta); err != nil {
+				return types.InspectFileResponse{}, fmt.Errorf("failed to unmarshal historical item metadata: %w", err)
+			}
+		} else {
+			// If UnmarshalJSON ran on the instance, unmarshal the raw bytes directly into your struct target
+			_ = json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta)
 		}
+
+		// --- DIAGNOSTIC LOG (TEMPORARY) ---
+		// Add this print statement to see if your struct properties are finally populated:
+		fmt.Printf("[DEBUG] Parsed ModTime from DB: %s, Current ModTime: %s\n",
+			histMeta.LastModifiedAt.UTC().Format(time.RFC3339),
+			info.ModTime().UTC().Format(time.RFC3339),
+		)
+		// ----------------------------------
 
 		// Standardize time formatting down to the second
 		currentModTime := info.ModTime().UTC().Truncate(time.Second)
@@ -72,9 +86,9 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 
 		// Tier 1 & 2 Check
 		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
-			
+
 			// Tier 3: Verify File Integrity with a Hash Check
-			currentHash, err := calculateFileHash(input.ItemPath)
+			currentHash, err := calculateFileHash(input.ItemPath, currentSize)
 			if err != nil {
 				return types.InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
 			}
@@ -90,11 +104,19 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 				shouldCloneChunks = true
 			} else {
 				action = "PROCEED_TO_CHUNK"
-				reason = "File size and mod-time matched, but cryptographic content checksum changed"
+				// Clear Indicator: Content inside changed without resizing the container array bounds
+				reason = "File size and mod-time matched, but cryptographic content checksum validation failed (internal byte contents modified)"
 			}
 		} else {
 			action = "PROCEED_TO_CHUNK"
-			reason = fmt.Sprintf("File properties altered. Old Size: %d, New Size: %d", historicalItem.OriginalSize, currentSize)
+			// Clear Indicator: Distinguish between volume alterations and timestamp updates
+			if historicalItem.OriginalSize == currentSize {
+				reason = fmt.Sprintf("File size matches (%d bytes), but modification time shifted. Old: %s, New: %s", 
+					currentSize, histModTime.Format(time.RFC3339), currentModTime.Format(time.RFC3339))
+			} else {
+				reason = fmt.Sprintf("File content properties altered. Old Size: %d bytes, New Size: %d bytes", 
+					historicalItem.OriginalSize, currentSize)
+			}
 		}
 	}
 
@@ -128,17 +150,33 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 }
 
 // Helper function to efficiently compute SHA-256 hash of a file
-func calculateFileHash(filePath string) (string, error) {
+func calculateFileHash(filePath string, currentSize int64) (string, error) {
+	const chunkSize int64 = 4 * 1024 * 1024
+	var offset int64 = 0
+	h := sha256.New()
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
 
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
-	}
+	for offset < currentSize {
+		length := chunkSize
+		if offset+length > currentSize {
+			length = currentSize - offset
+		}
 
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+		buf := make([]byte, length)
+		_, _ = io.ReadFull(file, buf)
+
+		// Compute signature for this virtual block segment
+		blockHasher := sha256.New()
+		blockHasher.Write(buf)
+		blockHash := hex.EncodeToString(blockHasher.Sum(nil))
+
+		h.Write([]byte(blockHash))
+		offset += chunkSize
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

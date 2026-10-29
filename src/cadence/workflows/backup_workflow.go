@@ -61,6 +61,17 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 	if inspectResponse.Action == "SKIP" {
 		// Log message via replay-safe cadence logger
 		workflow.GetLogger(ctx).Info("File processing skipped due to deduplication baseline match", zap.String("path", inspectRequest.ItemPath))
+
+		// Trigger the job finalization activity to mark the parent Job as SUCCESS before returning
+		finalizeJobReq := types.FinalizeJobRequest{
+			JobID:  actResp.Job.ID,
+			Status: "SUCCESS",
+		}
+		err = workflow.ExecuteActivity(ctx, jobActivities.FinalizeJobActivity, finalizeJobReq).Get(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to finalize skipped job status: %w", err)
+		}
+
 		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 	}
 
