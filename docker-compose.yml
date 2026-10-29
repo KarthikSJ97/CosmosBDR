@@ -21,10 +21,11 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
     container_name: cosmosbdr_seaweedfs
-    command: "server -s3 -dir=/data -s3.port=8333 -master.port=9333"
+    command: "server -s3 -filer -dir=/data -s3.port=8333 -master.port=9333 -filer.port=8888"
     ports:
       - "8333:8333"
       - "9333:9333"
+      - "8888:8888"
     volumes:
       - seaweeddata:/data
 
