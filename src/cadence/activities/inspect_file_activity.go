@@ -54,21 +54,26 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 	var reason string
 	var shouldCloneChunks bool
 
-	// 4. Enhanced Decision Pipeline
+	// 4. Decision Ladder (Pure Logic, No Writes)
 	if historicalItem == nil {
 		action = "PROCEED_TO_CHUNK"
 		reason = "No previous backup history found for this file"
 
 	} else {
-		// Parse existing metadata out of the historical record
+		// Cast datatypes.JSON explicitly to []byte so unmarshal can read it
 		var histMeta types.ItemMetadata
-		_ = json.Unmarshal(historicalItem.ItemMetadata, &histMeta)
+		if err := json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta); err != nil {
+			return types.InspectFileResponse{}, fmt.Errorf("failed to unmarshal historical item metadata: %w", err)
+		}
 
-		// Tier 1 & 2: Match Size AND Modification Time
+		// Standardize time formatting down to the second
+		currentModTime := info.ModTime().UTC().Truncate(time.Second)
 		histModTime := histMeta.LastModifiedAt.UTC().Truncate(time.Second)
-		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
 
-			// Tier 3: Verify File Integrity with a Hash Check [4]
+		// Tier 1 & 2 Check
+		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
+			
+			// Tier 3: Verify File Integrity with a Hash Check
 			currentHash, err := calculateFileHash(input.ItemPath)
 			if err != nil {
 				return types.InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
@@ -78,7 +83,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 				action = "SKIP"
 				reason = "File size, modification time, and cryptographic hash match perfectly; skipping backup"
 
-				newJobItem.Status = "SKIPPED" // [4]
+				newJobItem.Status = "SKIPPED"
 				newJobItem.ProcessedSize = historicalItem.ProcessedSize
 				newJobItem.Checksum = historicalItem.Checksum
 				newJobItem.ItemMetadata = historicalItem.ItemMetadata
