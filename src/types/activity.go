@@ -69,3 +69,26 @@ type FinalizeJobRequest struct {
 	Status       string  `json:"status"`        // "SUCCESS" or "FAILED"
 	ErrorMessage *string `json:"error_message"` // Populated if status is FAILED
 }
+
+// RestoreChunkPlan describes one ordered segment needed to assemble the file on disk.
+type RestoreChunkPlan struct {
+	ChunkIndex  int    `json:"chunk_index"`
+	OffsetBytes int64  `json:"offset_bytes"`
+	LengthBytes int    `json:"length_bytes"`
+	ChunkHash   string `json:"chunk_hash"`
+	SeaweedKey  string `json:"seaweed_key"`
+}
+
+type ResolveRestoreSourceRequest struct {
+	JobID           string `json:"job_id"`
+	ItemPath        string `json:"item_path"`
+	SourceJobItemID string `json:"source_job_item_id,omitempty"`
+}
+
+type ResolveRestoreSourceResponse struct {
+	DestinationPath string          `json:"destination_path"`
+	SourceJobItemID string          `json:"source_job_item_id"`
+	RestoreJobItem  *schema.JobItem `json:"restore_job_item"`
+	OriginalSize    int64           `json:"original_size"`
+	Chunks          []RestoreChunkPlan `json:"chunks"`
+}
