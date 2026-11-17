@@ -24,7 +24,8 @@ func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, it
 	var item schema.JobItem
 	err := r.DB.WithContext(ctx).
 		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ? AND job_items.status = ?", itemPath, "SUCCESS", "COMPLETED").
+		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
+			itemPath, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
 		Order("job_items.created_at DESC").
 		First(&item).Error
 
@@ -36,6 +37,43 @@ func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, it
 	}
 
 	return &item, nil
+}
+
+// GetEligibleBackupItemByID loads a COMPLETED item from a successful BACKUP job.
+func (r *JobItemRepository) GetEligibleBackupItemByID(ctx context.Context, itemID string) (*schema.JobItem, error) {
+	var item schema.JobItem
+	err := r.DB.WithContext(ctx).
+		Joins("JOIN jobs ON jobs.id = job_items.job_id").
+		Where("job_items.id = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
+			itemID, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query backup job item: %w", err)
+	}
+	return &item, nil
+}
+
+// GetLatestEligibleBackupItemByPath is like GetLatestCompletedItemByPath (BACKUP-only).
+func (r *JobItemRepository) GetLatestEligibleBackupItemByPath(ctx context.Context, itemPath string) (*schema.JobItem, error) {
+	return r.GetLatestCompletedItemByPath(ctx, itemPath)
+}
+
+// CreateRestoreJobItem opens a restore-scoped JobItem cloned from an eligible backup snapshot.
+func (r *JobItemRepository) CreateRestoreJobItem(ctx context.Context, restoreJobID string, source *schema.JobItem) (*schema.JobItem, error) {
+	restoreItem := &schema.JobItem{
+		JobID:        restoreJobID,
+		ItemPath:     source.ItemPath,
+		OriginalSize: source.OriginalSize,
+		Status:       "PENDING",
+		ItemMetadata: source.ItemMetadata,
+	}
+	if err := r.DB.WithContext(ctx).Create(restoreItem).Error; err != nil {
+		return nil, fmt.Errorf("failed to create restore job item: %w", err)
+	}
+	return restoreItem, nil
 }
 
 func (r *JobItemRepository) CreateJobItem(jobItem *schema.JobItem) error {
