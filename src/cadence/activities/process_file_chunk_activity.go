@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/types"
@@ -45,8 +46,12 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 	hasher.Write(buffer)
 	chunkHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// 5. Define the correct SeaweedFS storage key upfront
-	seaweedKey := fmt.Sprintf("chunks/%s", chunkHash)
+	// 5. Object key: {file_name}/chunks/{chunk_hash} (bucket is configured on the client)
+	filePrefix := input.FileName
+	if filePrefix == "" {
+		filePrefix = filepath.Base(input.ItemPath)
+	}
+	seaweedKey := fmt.Sprintf("%s/chunks/%s", filePrefix, chunkHash)
 
 	// Initialize the potential new global Chunk model structure
 	potentialChunk := &schema.Chunk{

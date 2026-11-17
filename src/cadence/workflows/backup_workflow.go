@@ -101,6 +101,7 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 			JobID:       actResp.Job.ID,
 			ItemID:      inspectResponse.JobItem.ID,
 			ItemPath:    inspectRequest.ItemPath,
+			FileName:    request.Payload.FileName,
 			ChunkIndex:  chunkIndex,
 			OffsetBytes: offset,
 			LengthBytes: int(length),
