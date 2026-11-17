@@ -11,7 +11,7 @@ import (
 )
 
 func (ja *JobActivities) InitJobActivity(ctx context.Context, request types.InitJobRequest) (*types.InitJobResponse, error) {
-	payloadBytes, err := json.Marshal("")
+	payloadBytes, err := json.Marshal(request.Payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal payload struct: %w", err)
 	}
