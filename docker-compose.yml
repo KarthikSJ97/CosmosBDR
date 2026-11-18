@@ -99,6 +99,9 @@ services:
     container_name: cosmosbdr_app
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
+    volumes:
+      # Set HOST_DATA_PATH in .env; in API use source_path "/host-data".
+      - ${HOST_DATA_PATH}:/host-data
     env_file:
       - .env
     environment:
