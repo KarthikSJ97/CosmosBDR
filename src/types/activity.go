@@ -92,3 +92,13 @@ type ResolveRestoreSourceResponse struct {
 	OriginalSize    int64           `json:"original_size"`
 	Chunks          []RestoreChunkPlan `json:"chunks"`
 }
+
+type PrepareRestoreTargetRequest struct {
+	DestinationPath string `json:"destination_path"`
+	OriginalSize    int64  `json:"original_size"`
+}
+
+type PrepareRestoreTargetResponse struct {
+	DestinationPath string `json:"destination_path"`
+	OriginalSize    int64  `json:"original_size"`
+}
