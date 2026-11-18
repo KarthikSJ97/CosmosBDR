@@ -22,4 +22,7 @@ func HandlerRegistry(app *fiber.App, cadenceClient cadenceClient.Client) {
 	})
 	backupHandler := NewBackupHandler(cadenceClient)
 	v1.Post("/backups", backupHandler.TriggerBackup)
+
+	restoreHandler := NewRestoreHandler(cadenceClient)
+	v1.Post("/restores", restoreHandler.TriggerRestore)
 }

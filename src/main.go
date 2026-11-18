@@ -83,6 +83,7 @@ func main() {
 
 	// Register the workfows and activities here
 	w.RegisterWorkflow(workflows.BackupWorkflow)
+	w.RegisterWorkflow(workflows.RestoreWorkflow)
 	w.RegisterActivity(jobActivities.InitJobActivity)
 	w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
 	w.RegisterActivity(jobActivities.InspectFileActivity)

@@ -1,0 +1,113 @@
+package workflows
+
+import (
+	"cosmosbdr/src/cadence/activities"
+	"cosmosbdr/src/types"
+	"fmt"
+	"path/filepath"
+	"time"
+
+	"go.uber.org/zap"
+
+	"go.uber.org/cadence/workflow"
+)
+
+func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (*types.BackupWorkflowResponse, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout:    120 * time.Second,
+		ScheduleToStartTimeout: 5 * time.Minute,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var jobActivities *activities.JobActivities
+
+	actReq := types.InitJobRequest{
+		FlowType:   request.FlowType,
+		SourcePath: request.SourcePath,
+		TargetPath: request.TargetPath,
+		Payload:    request.Payload,
+	}
+	var actResp types.InitJobResponse
+	if err := workflow.ExecuteActivity(ctx, jobActivities.InitJobActivity, actReq).Get(ctx, &actResp); err != nil {
+		return nil, fmt.Errorf("failed to execute InitJobActivity: %w", err)
+	}
+
+	itemPath := filepath.Join(request.SourcePath, request.Payload.FileName)
+	statusInput := types.UpdateJobStatusRequest{
+		JobID:  actResp.Job.ID,
+		Status: "IN_PROGRESS",
+	}
+	if err := workflow.ExecuteActivity(ctx, jobActivities.UpdateJobStatusActivity, statusInput).Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to update job status to IN_PROGRESS: %w", err)
+	}
+
+	resolveReq := types.ResolveRestoreSourceRequest{
+		JobID:           actResp.Job.ID,
+		ItemPath:        itemPath,
+		SourceJobItemID: request.Payload.SourceJobItemID,
+	}
+	var resolveResp types.ResolveRestoreSourceResponse
+	if err := workflow.ExecuteActivity(ctx, jobActivities.ResolveRestoreSourceActivity, resolveReq).Get(ctx, &resolveResp); err != nil {
+		return nil, fmt.Errorf("failed to execute ResolveRestoreSourceActivity: %w", err)
+	}
+
+	prepareReq := types.PrepareRestoreTargetRequest{
+		DestinationPath: resolveResp.DestinationPath,
+		OriginalSize:    resolveResp.OriginalSize,
+	}
+	if err := workflow.ExecuteActivity(ctx, jobActivities.PrepareRestoreTargetActivity, prepareReq).Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to execute PrepareRestoreTargetActivity: %w", err)
+	}
+
+	if resolveResp.OriginalSize > 0 && len(resolveResp.Chunks) > 0 {
+		var futures []workflow.Future
+		for _, chunk := range resolveResp.Chunks {
+			chunkReq := types.RestoreFileChunkRequest{
+				DestinationPath: resolveResp.DestinationPath,
+				ChunkIndex:      chunk.ChunkIndex,
+				OffsetBytes:     chunk.OffsetBytes,
+				LengthBytes:     chunk.LengthBytes,
+				ChunkHash:       chunk.ChunkHash,
+				SeaweedKey:      chunk.SeaweedKey,
+			}
+			futures = append(futures, workflow.ExecuteActivity(ctx, jobActivities.RestoreFileChunkActivity, chunkReq))
+		}
+
+		for i, future := range futures {
+			var chunkResp types.RestoreFileChunkResponse
+			if err := future.Get(ctx, &chunkResp); err != nil {
+				return nil, fmt.Errorf("parallel restore chunk failed at index %d: %w", i, err)
+			}
+		}
+	} else {
+		workflow.GetLogger(ctx).Info("Restore target has no chunks; empty file prepared",
+			zap.String("path", resolveResp.DestinationPath),
+		)
+	}
+
+	completeReq := types.CompleteJobItemRequest{
+		JobID:  actResp.Job.ID,
+		ItemID: resolveResp.RestoreJobItem.ID,
+	}
+	var completeResp types.CompleteJobItemResponse
+	if err := workflow.ExecuteActivity(ctx, jobActivities.CompleteJobItemActivity, completeReq).Get(ctx, &completeResp); err != nil {
+		return nil, fmt.Errorf("failed to execute CompleteJobItemActivity: %w", err)
+	}
+
+	workflow.GetLogger(ctx).Info("File restored and job item marked complete",
+		zap.String("job_id", actResp.Job.ID),
+		zap.String("item_id", completeResp.ItemID),
+		zap.String("source_job_item_id", resolveResp.SourceJobItemID),
+		zap.String("destination_path", resolveResp.DestinationPath),
+	)
+
+	finalizeJobReq := types.FinalizeJobRequest{
+		JobID:  actResp.Job.ID,
+		Status: "SUCCESS",
+	}
+	if err := workflow.ExecuteActivity(ctx, jobActivities.FinalizeJobActivity, finalizeJobReq).Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to finalize job status: %w", err)
+	}
+
+	return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
+}
