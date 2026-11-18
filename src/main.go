@@ -91,6 +91,7 @@ func main() {
 	w.RegisterActivity(jobActivities.FinalizeJobActivity)
 	w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
 	w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
+	w.RegisterActivity(jobActivities.RestoreFileChunkActivity)
 
 	go func() {
 		log.Println("Starting Cadence Worker...")

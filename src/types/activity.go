@@ -102,3 +102,17 @@ type PrepareRestoreTargetResponse struct {
 	DestinationPath string `json:"destination_path"`
 	OriginalSize    int64  `json:"original_size"`
 }
+
+type RestoreFileChunkRequest struct {
+	DestinationPath string `json:"destination_path"`
+	ChunkIndex      int    `json:"chunk_index"`
+	OffsetBytes     int64  `json:"offset_bytes"`
+	LengthBytes     int    `json:"length_bytes"`
+	ChunkHash       string `json:"chunk_hash"`
+	SeaweedKey      string `json:"seaweed_key"`
+}
+
+type RestoreFileChunkResponse struct {
+	ChunkIndex   int `json:"chunk_index"`
+	BytesWritten int `json:"bytes_written"`
+}
