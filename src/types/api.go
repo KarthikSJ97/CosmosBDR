@@ -7,6 +7,8 @@ type AvailableBackup struct {
 	JobItemID     string    `json:"job_item_id"`
 	JobID         string    `json:"job_id"`
 	ItemPath      string    `json:"item_path"`
+	Status        string    `json:"status"` // COMPLETED or SKIPPED (unchanged dedup)
+	Unchanged     bool      `json:"unchanged"`
 	OriginalSize  int64     `json:"original_size"`
 	ProcessedSize int64     `json:"processed_size"`
 	Checksum      string    `json:"checksum"` // SHA-256 of full file bytes (shasum -a 256)

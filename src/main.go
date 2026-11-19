@@ -89,6 +89,8 @@ func main() {
 	w.RegisterActivity(jobActivities.InspectFileActivity)
 	w.RegisterActivity(jobActivities.ProcessFileChunkActivity)
 	w.RegisterActivity(jobActivities.CompleteJobItemActivity)
+	w.RegisterActivity(jobActivities.PublishSnapshotManifestActivity)
+	w.RegisterActivity(jobActivities.FinalizeSkippedBackupItemActivity)
 	w.RegisterActivity(jobActivities.FinalizeJobActivity)
 	w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
 	w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)

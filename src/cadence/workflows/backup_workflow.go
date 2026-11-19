@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"cosmosbdr/src/cadence/activities"
+	"cosmosbdr/src/manifest"
 	"cosmosbdr/src/types"
 	"fmt"
 	"path/filepath"
@@ -62,6 +63,24 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 		// Log message via replay-safe cadence logger
 		workflow.GetLogger(ctx).Info("File processing skipped due to deduplication baseline match", zap.String("path", inspectRequest.ItemPath))
 
+		var manifestResp types.PublishSnapshotManifestResponse
+		publishReq := types.PublishSnapshotManifestRequest{
+			ItemID:   inspectResponse.JobItem.ID,
+			FileName: request.Payload.FileName,
+		}
+		if err := workflow.ExecuteActivity(ctx, jobActivities.PublishSnapshotManifestActivity, publishReq).Get(ctx, &manifestResp); err != nil {
+			return nil, fmt.Errorf("failed to publish snapshot manifest for skipped file: %w", err)
+		}
+
+		skipFinalizeReq := types.FinalizeSkippedBackupItemRequest{
+			ItemID:      inspectResponse.JobItem.ID,
+			SkipReason:  inspectResponse.Reason,
+			ManifestKey: manifestResp.ManifestKey,
+		}
+		if err := workflow.ExecuteActivity(ctx, jobActivities.FinalizeSkippedBackupItemActivity, skipFinalizeReq).Get(ctx, nil); err != nil {
+			return nil, fmt.Errorf("failed to record skipped backup in database: %w", err)
+		}
+
 		// Trigger the job finalization activity to mark the parent Job as SUCCESS before returning
 		finalizeJobReq := types.FinalizeJobRequest{
 			JobID:  actResp.Job.ID,
@@ -78,13 +97,37 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 	// CASE 2: File is new or changed -> Begin Parallel Chunking Pipeline
 	fileSize := inspectResponse.JobItem.OriginalSize
 	if fileSize == 0 {
-		// Handle empty file edge case safely: No chunks needed
 		workflow.GetLogger(ctx).Info("File is empty, skipping chunk processing segments", zap.String("path", inspectRequest.ItemPath))
+
+		emptyPublishReq := types.PublishSnapshotManifestRequest{
+			ItemID:   inspectResponse.JobItem.ID,
+			FileName: request.Payload.FileName,
+		}
+		if err := workflow.ExecuteActivity(ctx, jobActivities.PublishSnapshotManifestActivity, emptyPublishReq).Get(ctx, nil); err != nil {
+			return nil, fmt.Errorf("failed to publish snapshot manifest for empty file: %w", err)
+		}
+
+		emptyCompleteReq := types.CompleteJobItemRequest{
+			JobID:  actResp.Job.ID,
+			ItemID: inspectResponse.JobItem.ID,
+		}
+		if err := workflow.ExecuteActivity(ctx, jobActivities.CompleteJobItemActivity, emptyCompleteReq).Get(ctx, nil); err != nil {
+			return nil, fmt.Errorf("failed to complete empty file job item: %w", err)
+		}
+
+		finalizeJobReq := types.FinalizeJobRequest{
+			JobID:  actResp.Job.ID,
+			Status: "SUCCESS",
+		}
+		if err := workflow.ExecuteActivity(ctx, jobActivities.FinalizeJobActivity, finalizeJobReq).Get(ctx, nil); err != nil {
+			return nil, fmt.Errorf("failed to finalize empty file job: %w", err)
+		}
+
 		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, nil
 	}
 
 	// 5. Calculate chunk segmentation array configurations
-	const chunkSize int64 = 4 * 1024 * 1024 // Fixed 4MB window allocations
+	chunkSize := int64(manifest.ChunkSizeBytes)
 	var offset int64 = 0
 	chunkIndex := 0
 
@@ -124,7 +167,15 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 		}
 	}
 
-	// NEW: 7. Finalize and mark the file transaction row as COMPLETED
+	// 7. DR manifest (strict) then mark the file row COMPLETED
+	publishReq := types.PublishSnapshotManifestRequest{
+		ItemID:   inspectResponse.JobItem.ID,
+		FileName: request.Payload.FileName,
+	}
+	if err := workflow.ExecuteActivity(ctx, jobActivities.PublishSnapshotManifestActivity, publishReq).Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed to publish snapshot manifest: %w", err)
+	}
+
 	finalizeReq := types.CompleteJobItemRequest{
 		JobID:  actResp.Job.ID,
 		ItemID: inspectResponse.JobItem.ID,

@@ -9,6 +9,9 @@ import (
 type ItemMetadata struct {
 	LastModifiedAt time.Time `json:"last_modified_at"`
 	FingerprintAlg string    `json:"fingerprint_alg"` // e.g., "sha256"
+	BackupOutcome  string    `json:"backup_outcome,omitempty"` // e.g. "unchanged"
+	SkipReason     string    `json:"skip_reason,omitempty"`
+	ManifestKey    string    `json:"manifest_key,omitempty"`
 }
 
 type InitJobRequest struct {
@@ -57,6 +60,27 @@ type ProcessFileChunkResponse struct {
 type CompleteJobItemRequest struct {
 	JobID  string `json:"job_id"`
 	ItemID string `json:"item_id"`
+}
+
+type FinalizeSkippedBackupItemRequest struct {
+	ItemID       string `json:"item_id"`
+	SkipReason   string `json:"skip_reason"`
+	ManifestKey  string `json:"manifest_key"`
+}
+
+type FinalizeSkippedBackupItemResponse struct {
+	ItemID string `json:"item_id"`
+	Status string `json:"status"`
+}
+
+type PublishSnapshotManifestRequest struct {
+	ItemID   string `json:"item_id"`
+	FileName string `json:"file_name"`
+}
+
+type PublishSnapshotManifestResponse struct {
+	ItemID      string `json:"item_id"`
+	ManifestKey string `json:"manifest_key"`
 }
 
 type CompleteJobItemResponse struct {

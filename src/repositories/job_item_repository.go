@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
 type JobItemRepository struct {
 	DB *gorm.DB
 }
+
+// backupSnapshotStatuses are job_item rows that represent a successful file backup snapshot.
+var backupSnapshotStatuses = []string{"COMPLETED", "SKIPPED"}
 
 func NewJobItemRepository(db *gorm.DB) *JobItemRepository {
 	return &JobItemRepository{DB: db}
@@ -22,8 +26,8 @@ func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, it
 	var item schema.JobItem
 	err := r.DB.WithContext(ctx).
 		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
-			itemPath, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
+		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
+			itemPath, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
 		Order("job_items.created_at DESC").
 		First(&item).Error
 
@@ -37,13 +41,13 @@ func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, it
 	return &item, nil
 }
 
-// GetEligibleBackupItemByID loads a COMPLETED item from a successful BACKUP job.
+// GetEligibleBackupItemByID loads a restorable snapshot item from a successful BACKUP job.
 func (r *JobItemRepository) GetEligibleBackupItemByID(ctx context.Context, itemID string) (*schema.JobItem, error) {
 	var item schema.JobItem
 	err := r.DB.WithContext(ctx).
 		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.id = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
-			itemID, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
+		Where("job_items.id = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
+			itemID, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -59,13 +63,13 @@ func (r *JobItemRepository) GetLatestEligibleBackupItemByPath(ctx context.Contex
 	return r.GetLatestCompletedItemByPath(ctx, itemPath)
 }
 
-// ListEligibleBackupItemsByPath returns completed backup snapshots for a file, newest first.
+// ListEligibleBackupItemsByPath returns backup snapshots for a file (including unchanged dedup skips), newest first.
 func (r *JobItemRepository) ListEligibleBackupItemsByPath(ctx context.Context, itemPath string) ([]schema.JobItem, error) {
 	var items []schema.JobItem
 	err := r.DB.WithContext(ctx).
 		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
-			itemPath, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
+		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
+			itemPath, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
 		Preload("Job").
 		Order("job_items.created_at DESC").
 		Find(&items).Error
@@ -138,6 +142,19 @@ func (r *JobItemRepository) CloneChunksFromItem(ctx context.Context, historicalI
 		return fmt.Errorf("failed to bulk insert cloned chunks: %w", err)
 	}
 
+	return nil
+}
+
+// UpdateSkippedBackupItemProof persists DR manifest location and skip proof on an unchanged backup run.
+func (r *JobItemRepository) UpdateSkippedBackupItemProof(ctx context.Context, itemID string, metadata datatypes.JSON) error {
+	err := r.DB.WithContext(ctx).Model(&schema.JobItem{}).
+		Where("id = ? AND status = ?", itemID, "SKIPPED").
+		Updates(map[string]interface{}{
+			"item_metadata": metadata,
+		}).Error
+	if err != nil {
+		return fmt.Errorf("failed to record skipped backup proof: %w", err)
+	}
 	return nil
 }
 

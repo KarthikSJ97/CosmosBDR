@@ -48,6 +48,8 @@ func (h BackupHandler) ListBackups(c *fiber.Ctx) error {
 			JobItemID:     item.ID,
 			JobID:         item.JobID,
 			ItemPath:      item.ItemPath,
+			Status:        item.Status,
+			Unchanged:     item.Status == "SKIPPED",
 			OriginalSize:  item.OriginalSize,
 			ProcessedSize: item.ProcessedSize,
 			Checksum:      item.Checksum,
