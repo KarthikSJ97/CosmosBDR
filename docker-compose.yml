@@ -31,6 +31,12 @@ services:
       - "8888:8888"
     volumes:
       - seaweeddata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8333"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
 
   cadence:
     image: ubercadence/server:master-auto-setup
@@ -52,6 +58,8 @@ services:
 
   cadence-web:
     image: ubercadence/web:latest
+    # Native arm64 image exists; without this, a cached amd64 layer triggers platform warnings on Apple Silicon.
+    platform: linux/arm64
     container_name: cosmosbdr_cadence_web
     ports:
       - "${CADENCE_UI_PORT:-8088}:8088"
@@ -115,7 +123,7 @@ services:
       atlas-migrate:
         condition: service_completed_successfully
       seaweedfs:
-        condition: service_started
+        condition: service_healthy
       cadence:
         condition: service_started
       cadence-register-domain:
