@@ -2,11 +2,16 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // SeaweedClient wraps the S3 client configured for SeaweedFS
@@ -33,10 +38,74 @@ func InitSeaweedFS(endpoint, region, accessKey, secretKey, bucket string) (*Seaw
 		o.UsePathStyle = true
 	})
 
-	log.Printf("Initialized SeaweedFS client targeting endpoint: %s (Bucket: %s)", endpoint, bucket)
-
-	return &SeaweedClient{
+	client := &SeaweedClient{
 		Client: s3Client,
 		Bucket: bucket,
-	}, nil
+	}
+
+	if err := client.EnsureBucket(ctx); err != nil {
+		return nil, err
+	}
+
+	log.Printf("Initialized SeaweedFS client targeting endpoint: %s (Bucket: %s)", endpoint, bucket)
+
+	return client, nil
+}
+
+// EnsureBucket verifies the configured bucket exists and creates it when missing (e.g. after docker compose down -v).
+func (c *SeaweedClient) EnsureBucket(ctx context.Context) error {
+	if c.Bucket == "" {
+		return fmt.Errorf("seaweed bucket name is required (set SEAWEED_BUCKET)")
+	}
+
+	_, err := c.Client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(c.Bucket),
+	})
+	if err == nil {
+		log.Printf("SeaweedFS bucket %q is available", c.Bucket)
+		return nil
+	}
+	if !isBucketMissing(err) {
+		return fmt.Errorf("check SeaweedFS bucket %q: %w", c.Bucket, err)
+	}
+
+	log.Printf("SeaweedFS bucket %q not found, creating...", c.Bucket)
+	_, err = c.Client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(c.Bucket),
+	})
+	if err == nil {
+		log.Printf("SeaweedFS bucket %q created", c.Bucket)
+		return nil
+	}
+	if isBucketAlreadyExists(err) {
+		log.Printf("SeaweedFS bucket %q already exists", c.Bucket)
+		return nil
+	}
+	return fmt.Errorf("create SeaweedFS bucket %q: %w", c.Bucket, err)
+}
+
+func isBucketMissing(err error) bool {
+	var respErr *smithyhttp.ResponseError
+	if errors.As(err, &respErr) && respErr.HTTPStatusCode() == 404 {
+		return true
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFound", "NoSuchBucket":
+			return true
+		}
+	}
+	return false
+}
+
+func isBucketAlreadyExists(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "BucketAlreadyExists", "BucketAlreadyOwnedByYou":
+			return true
+		}
+	}
+	return false
 }

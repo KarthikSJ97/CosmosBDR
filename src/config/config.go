@@ -63,7 +63,7 @@ func LoadConfig() *Config {
 		SeaweedRegion:    getEnvString("SEAWEED_REGION", "region"),
 		SeaweedAccessKey: getEnvString("SEAWEED_ACCESS_KEY", "dummy"),
 		SeaweedSecretKey: getEnvString("SEAWEED_SECRET_KEY", "dummy"),
-		SeaweedBucket:    getEnvString("SEAWEED_BUCKET", "bucket"),
+		SeaweedBucket:    getEnvString("SEAWEED_BUCKET", "cosmosbdr"),
 
 		// Cadence workflow orchestartor
 		CadenceGRPCHost: getEnvString("CADENCE_GRPC_HOST", "localhost"),

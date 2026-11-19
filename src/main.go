@@ -47,9 +47,7 @@ func main() {
 		cfg.SeaweedBucket,
 	)
 	if err != nil {
-		log.Printf("Warning: Could not initialize SeaweedFS client: %v.", err)
-	} else {
-		_ = seaweedClient // Ready for chunk storage operations
+		log.Fatalf("Failed to initialize SeaweedFS storage: %v", err)
 	}
 
 	// 4. Initialize Cadence Client[cite: 1]
