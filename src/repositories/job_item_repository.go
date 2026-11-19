@@ -61,6 +61,22 @@ func (r *JobItemRepository) GetLatestEligibleBackupItemByPath(ctx context.Contex
 	return r.GetLatestCompletedItemByPath(ctx, itemPath)
 }
 
+// ListEligibleBackupItemsByPath returns completed backup snapshots for a file, newest first.
+func (r *JobItemRepository) ListEligibleBackupItemsByPath(ctx context.Context, itemPath string) ([]schema.JobItem, error) {
+	var items []schema.JobItem
+	err := r.DB.WithContext(ctx).
+		Joins("JOIN jobs ON jobs.id = job_items.job_id").
+		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status = ?",
+			itemPath, "SUCCESS", string(schema.FlowBackup), "COMPLETED").
+		Preload("Job").
+		Order("job_items.created_at DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backup job items: %w", err)
+	}
+	return items, nil
+}
+
 // CreateRestoreJobItem opens a restore-scoped JobItem cloned from an eligible backup snapshot.
 func (r *JobItemRepository) CreateRestoreJobItem(ctx context.Context, restoreJobID string, source *schema.JobItem) (*schema.JobItem, error) {
 	restoreItem := &schema.JobItem{

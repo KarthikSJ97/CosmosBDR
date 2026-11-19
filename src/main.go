@@ -107,7 +107,7 @@ func main() {
 	})
 
 	// 8. Register handlers
-	handlers.HandlerRegistry(app, cadenceClient)
+	handlers.HandlerRegistry(app, cadenceClient, jobItemRepo)
 
 	// 9. Start listening on IPv4 loopback / configured port[cite: 1]
 	address := ":" + strconv.Itoa(cfg.Port)
