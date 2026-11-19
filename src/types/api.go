@@ -9,7 +9,7 @@ type AvailableBackup struct {
 	ItemPath      string    `json:"item_path"`
 	OriginalSize  int64     `json:"original_size"`
 	ProcessedSize int64     `json:"processed_size"`
-	Checksum      string    `json:"checksum"`
+	Checksum      string    `json:"checksum"` // SHA-256 of full file bytes (shasum -a 256)
 	BackedUpAt    time.Time `json:"backed_up_at"`
 	JobCreatedAt  time.Time `json:"job_created_at"`
 }

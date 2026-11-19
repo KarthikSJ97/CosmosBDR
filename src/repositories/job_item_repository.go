@@ -3,8 +3,6 @@ package repositories
 import (
 	"context"
 	"cosmosbdr/src/db/schema"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -92,6 +90,18 @@ func (r *JobItemRepository) CreateRestoreJobItem(ctx context.Context, restoreJob
 	return restoreItem, nil
 }
 
+func (r *JobItemRepository) GetJobItemByID(ctx context.Context, itemID string) (*schema.JobItem, error) {
+	var item schema.JobItem
+	err := r.DB.WithContext(ctx).First(&item, "id = ?", itemID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load job item: %w", err)
+	}
+	return &item, nil
+}
+
 func (r *JobItemRepository) CreateJobItem(jobItem *schema.JobItem) error {
 	return r.DB.Create(jobItem).Error
 }
@@ -131,17 +141,14 @@ func (r *JobItemRepository) CloneChunksFromItem(ctx context.Context, historicalI
 	return nil
 }
 
-func (r *JobItemRepository) CompleteJobItem(ctx context.Context, itemID string) error {
+func (r *JobItemRepository) CompleteJobItem(ctx context.Context, itemID string, contentChecksum string) error {
 	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Join with the global chunk table to pull actual content hashes and their sizes
 		var chunks []struct {
-			ChunkHash string
 			SizeBytes int64
 		}
 
-		// Note: We pull size_bytes from the chunks table to track actual written size
 		err := tx.Table("item_chunks").
-			Select("chunks.chunk_hash, chunks.size_bytes").
+			Select("chunks.size_bytes").
 			Joins("JOIN chunks ON chunks.id = item_chunks.chunk_id").
 			Where("item_chunks.item_id = ?", itemID).
 			Order("item_chunks.chunk_index ASC").
@@ -150,21 +157,15 @@ func (r *JobItemRepository) CompleteJobItem(ctx context.Context, itemID string) 
 			return fmt.Errorf("failed to fetch content chunk hashes: %w", err)
 		}
 
-		// 2. Compute a composite manifest signature and accumulate total processed size
-		h := sha256.New()
 		var totalProcessedSize int64 = 0
-
 		for _, c := range chunks {
-			h.Write([]byte(c.ChunkHash))
-			totalProcessedSize += c.SizeBytes // Accumulate byte counts smoothly here
+			totalProcessedSize += c.SizeBytes
 		}
-		compositeChecksum := hex.EncodeToString(h.Sum(nil))
 
-		// 3. Update the JobItem state to terminal COMPLETED
 		err = tx.Model(&schema.JobItem{}).Where("id = ?", itemID).Updates(map[string]interface{}{
 			"status":         "COMPLETED",
-			"processed_size": totalProcessedSize, // Variable is now correctly declared and populated
-			"checksum":       compositeChecksum,
+			"processed_size": totalProcessedSize,
+			"checksum":       contentChecksum,
 		}).Error
 		if err != nil {
 			return fmt.Errorf("failed to finalize job item record: %w", err)

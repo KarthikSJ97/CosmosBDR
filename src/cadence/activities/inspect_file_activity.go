@@ -2,12 +2,10 @@ package activities
 
 import (
 	"context"
+	"cosmosbdr/src/filehash"
 	"cosmosbdr/src/types"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -80,7 +78,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
 
 			// Tier 3: Verify File Integrity with a Hash Check
-			currentHash, err := calculateFileHash(input.ItemPath, currentSize)
+			currentHash, err := filehash.ContentSHA256(input.ItemPath)
 			if err != nil {
 				return types.InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
 			}
@@ -139,36 +137,4 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 		JobItem: newJobItem,
 		Reason:  reason,
 	}, nil
-}
-
-// Helper function to efficiently compute SHA-256 hash of a file
-func calculateFileHash(filePath string, currentSize int64) (string, error) {
-	const chunkSize int64 = 4 * 1024 * 1024
-	var offset int64 = 0
-	h := sha256.New()
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	for offset < currentSize {
-		length := chunkSize
-		if offset+length > currentSize {
-			length = currentSize - offset
-		}
-
-		buf := make([]byte, length)
-		_, _ = io.ReadFull(file, buf)
-
-		// Compute signature for this virtual block segment
-		blockHasher := sha256.New()
-		blockHasher.Write(buf)
-		blockHash := hex.EncodeToString(blockHasher.Sum(nil))
-
-		h.Write([]byte(blockHash))
-		offset += chunkSize
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
