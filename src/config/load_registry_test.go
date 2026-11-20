@@ -56,8 +56,6 @@ func TestLoadSourceRegistry_SFTPResolveEnvRefs(t *testing.T) {
 	t.Setenv("TEST_SFTP_USER", "backup")
 	t.Setenv("TEST_SFTP_ROOT", "/data")
 	t.Setenv("TEST_SFTP_FP", "SHA256:abc")
-	t.Setenv("TEST_SFTP_DIAL_HOST", "tunnel.local")
-	t.Setenv("TEST_SFTP_DIAL_PORT", "2222")
 	t.Setenv("TEST_SFTP_KEY", "-----BEGIN OPENSSH PRIVATE KEY-----\nMC4w\n-----END OPENSSH PRIVATE KEY-----\n")
 
 	dir := t.TempDir()
@@ -73,8 +71,6 @@ sources:
     ssh:
       secret_ref: TEST_SFTP_KEY
       host_key_fingerprint: env:TEST_SFTP_FP
-      dial_host: env:TEST_SFTP_DIAL_HOST
-      dial_port_env: TEST_SFTP_DIAL_PORT
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +94,8 @@ policies: []
 	if s.Host != "10.0.0.5" || s.User != "backup" || s.RemoteRoot != "/data" {
 		t.Fatalf("resolved fields: host=%q user=%q root=%q", s.Host, s.User, s.RemoteRoot)
 	}
-	if s.SSH.HostKeyFingerprint != "SHA256:abc" || s.SSH.DialHost != "tunnel.local" || s.SSH.DialPort != 2222 {
-		t.Fatalf("ssh: fp=%q dial_host=%q dial_port=%d", s.SSH.HostKeyFingerprint, s.SSH.DialHost, s.SSH.DialPort)
+	if s.SSH.HostKeyFingerprint != "SHA256:abc" {
+		t.Fatalf("ssh fingerprint: got %q", s.SSH.HostKeyFingerprint)
 	}
 }
 

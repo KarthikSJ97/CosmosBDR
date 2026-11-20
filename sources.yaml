@@ -18,5 +18,3 @@ sources:
       secret_ref: WIN_HOME_LAPTOP_SSH_KEY
       known_hosts_policy: pinned
       host_key_fingerprint: env:WIN_HOME_LAPTOP_HOST_KEY_FINGERPRINT
-      dial_host: env:WIN_HOME_LAPTOP_DIAL_HOST
-      dial_port_env: WIN_HOME_LAPTOP_DIAL_PORT

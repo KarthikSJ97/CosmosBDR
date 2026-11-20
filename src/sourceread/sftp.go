@@ -32,15 +32,7 @@ func NewSFTPFileReader(ctx context.Context, src config.ResolvedSource, remoteObj
 		return nil, err
 	}
 
-	dialHost := src.Host
-	dialPort := src.Port
-	if strings.TrimSpace(src.SSH.DialHost) != "" {
-		dialHost = strings.TrimSpace(src.SSH.DialHost)
-	}
-	if src.SSH.DialPort != 0 {
-		dialPort = src.SSH.DialPort
-	}
-	addr := net.JoinHostPort(dialHost, fmt.Sprintf("%d", dialPort))
+	addr := net.JoinHostPort(src.Host, fmt.Sprintf("%d", src.Port))
 	client, err := dialSSH(addr, cfg, src)
 	if err != nil {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
