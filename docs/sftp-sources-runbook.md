@@ -1,6 +1,6 @@
 # SFTP sources runbook (Docker)
 
-Back up remote files (e.g. Windows OpenSSH) into Seaweed; restore v1 writes to local `HOST_DATA_PATH`. Architecture: [multi-source-backup-strategy.md](./multi-source-backup-strategy.md).
+Back up remote files (e.g. Windows OpenSSH) into Seaweed; restore writes back to the same path on the remote (`remote_root` + relative path). Architecture: [multi-source-backup-strategy.md](./multi-source-backup-strategy.md).
 
 CosmosBDR connects with **host, port, user, SSH key, host key fingerprint, remote_root** from `.env` — no app-level tunnel or dial overrides.
 
@@ -95,7 +95,7 @@ curl -sS -X POST http://localhost:8080/api/v1/backups \
 `flow_type` must be **`BACKUP`**.
 
 4. **List:** `curl -sS 'http://localhost:8080/api/v1/backups?backup_key=win-home-laptop:My%20Memes.pdf'`
-5. **Restore (v1 → local host data only):**
+5. **Restore (default → same path on remote):**
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/restores \
@@ -109,7 +109,9 @@ curl -sS -X POST http://localhost:8080/api/v1/restores \
   }'
 ```
 
-Output: `<HOST_DATA_PATH>/<relative_path>` on the Mac.
+Output: `<remote_root>/<relative_path>` on the Windows host (overwrites if the file already exists).
+
+Optional local staging only: set top-level `"target_path": "/host-data/My Memes.pdf"` to write on the Mac instead.
 
 No Mac `ssh -L`, no extra env vars beyond the source block.
 

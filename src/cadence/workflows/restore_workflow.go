@@ -46,6 +46,7 @@ func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) 
 		ItemPath:        itemPath,
 		BackupKey:       request.Payload.BackupKey,
 		SourceJobItemID: request.Payload.SourceJobItemID,
+		TargetPath:      request.TargetPath,
 	}
 	var resolveResp types.ResolveRestoreSourceResponse
 	if err := workflow.ExecuteActivity(ctx, jobActivities.ResolveRestoreSourceActivity, resolveReq).Get(ctx, &resolveResp); err != nil {
@@ -54,6 +55,8 @@ func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) 
 
 	prepareReq := types.PrepareRestoreTargetRequest{
 		DestinationPath: resolveResp.DestinationPath,
+		SourceID:        resolveResp.SourceID,
+		RemoteIO:        resolveResp.RemoteIO,
 		OriginalSize:    resolveResp.OriginalSize,
 	}
 	if err := workflow.ExecuteActivity(ctx, jobActivities.PrepareRestoreTargetActivity, prepareReq).Get(ctx, nil); err != nil {
@@ -65,6 +68,8 @@ func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) 
 		for _, chunk := range resolveResp.Chunks {
 			chunkReq := types.RestoreFileChunkRequest{
 				DestinationPath: resolveResp.DestinationPath,
+				SourceID:        resolveResp.SourceID,
+				RemoteIO:        resolveResp.RemoteIO,
 				ChunkIndex:      chunk.ChunkIndex,
 				OffsetBytes:     chunk.OffsetBytes,
 				LengthBytes:     chunk.LengthBytes,

@@ -27,21 +27,9 @@ type SFTPFileReader struct {
 
 func NewSFTPFileReader(ctx context.Context, src config.ResolvedSource, remoteObjectPath string) (*SFTPFileReader, error) {
 	_ = ctx
-	cfg, err := sshClientConfig(src)
+	client, scl, err := connectSFTP(src)
 	if err != nil {
 		return nil, err
-	}
-
-	addr := net.JoinHostPort(src.Host, fmt.Sprintf("%d", src.Port))
-	client, err := dialSSH(addr, cfg, src)
-	if err != nil {
-		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
-	}
-
-	scl, err := sftp.NewClient(client)
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("sftp client: %w", err)
 	}
 
 	remoteObjectPath = path.Clean(remoteObjectPath)

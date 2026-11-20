@@ -246,13 +246,13 @@ Shared `chunkcodec` for backup and restore.
 **Backup store vs restore target (locked):**
 
 - **All backup bytes** live in **SeaweedFS** on the machine running CosmosBDR, with chunk data on a **host bind-mounted path** (`SEAWEED_DATA_PATH`). Remote SFTP/SSH paths are **sources only**—never the durability tier.
-- **Restore (default):** read chunks from Seaweed → decrypt/decompress → write to a **local filesystem path** on the CosmosBDR host (e.g. under `/host-data` or an explicit local `target_path` in the API). **No default push-back over SFTP** in v1; remote push-restore can be a later optional phase.
+- **Restore (default):** read chunks from Seaweed → decrypt/decompress → write back to the **same path as the backup source** (local `container_mount` or SFTP `remote_root` + relative path). Existing files are overwritten (create if missing; parent dirs created on write). Optional **`target_path`** on the API restores to a local path on the CosmosBDR host instead (e.g. DR staging under `/host-data`).
 
 **Endpoints (conceptual):**
 
 - **Backup:** `{ "policy_id" }` or `{ "source_id", "relative_path" }`.
 - **List:** by `backup_key` or `source_id` + path.
-- **Restore:** `{ "backup_key", "source_job_item_id?", "target_path": "/host-data/..." }` — `target_path` optional; default reconstructs under local source mount using stored logical/`backup_key` layout.
+- **Restore:** `{ "backup_key", "source_job_item_id?", "target_path"?: "/host-data/..." }` — without `target_path`, default is the original source location from `backup_key`; `target_path` overrides to a local path on the host.
 
 ---
 
@@ -279,7 +279,7 @@ Shared `chunkcodec` for backup and restore.
 4. Cadence cron for backup; restore API-only
 5. Plaintext-hash dedup, encrypted blobs in Seaweed
 6. **Backup durability:** always Seaweed on CosmosBDR host (bind mount); remotes are ingest sources only
-7. **Restore default:** local filesystem on CosmosBDR host (from Seaweed); no SFTP push-back in v1
+7. **Restore default:** original backup source path (local mount or SFTP remote); optional `target_path` for local staging on CosmosBDR host
 8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
 9. **Config:** validate `sources.yaml` / `backup-policies.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 
@@ -448,7 +448,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Topic | Decision | Implication |
 |-------|----------|-------------|
 | **Where backups live** | All chunk/manifest storage in **Seaweed** on the **local host** running the server (`SEAWEED_DATA_PATH` bind mount). | Ingest from local mount or remote SFTP; durability is always central Seaweed + Postgres on this host. |
-| **Restore default** | **Local only** for v1: restore reads Seaweed and writes to a path on the CosmosBDR host (default under `/host-data` or explicit `target_path`). | `RestoreWorkflow` stays filesystem-targeted; SFTP upload-restore is out of scope until explicitly scheduled. |
+| **Restore default** | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type. |
 | **WORM vs TTL** | **No WORM** for v1. **TTL per source** in `sources.yaml`. After TTL, delete **version metadata** and **physically remove** Seaweed objects / chunk rows that are **no longer referenced**. | Phase F implements refcount-safe GC; deduped chunks shared with newer backups are never deleted early. |
 | **YAML validation** | Schemas, struct mapping, and loader in **`src/config/`**. | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
 

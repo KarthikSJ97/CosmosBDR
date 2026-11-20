@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"cosmosbdr/src/sourceread"
 	"cosmosbdr/src/types"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -62,15 +63,35 @@ func (ja *JobActivities) RestoreFileChunkActivity(ctx context.Context, input typ
 		)
 	}
 
-	file, err := os.OpenFile(input.DestinationPath, os.O_RDWR, 0)
-	if err != nil {
-		return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to open restore target for writing (index %d): %w", input.ChunkIndex, err)
-	}
-	defer file.Close()
+	var written int
+	if input.RemoteIO {
+		if ja.Registry == nil {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("source registry is not configured")
+		}
+		if input.SourceID == "" {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("source_id is required for remote restore")
+		}
+		src, ok := ja.Registry.GetSource(input.SourceID)
+		if !ok {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("unknown source_id %q", input.SourceID)
+		}
+		n, err := sourceread.WriteSFTPAt(ctx, src, input.DestinationPath, input.OffsetBytes, buffer)
+		if err != nil {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to write remote chunk at offset %d (index %d): %w", input.OffsetBytes, input.ChunkIndex, err)
+		}
+		written = n
+	} else {
+		file, err := os.OpenFile(input.DestinationPath, os.O_RDWR, 0)
+		if err != nil {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to open restore target for writing (index %d): %w", input.ChunkIndex, err)
+		}
+		defer file.Close()
 
-	written, err := file.WriteAt(buffer, input.OffsetBytes)
-	if err != nil {
-		return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to write chunk at offset %d (index %d): %w", input.OffsetBytes, input.ChunkIndex, err)
+		n, err := file.WriteAt(buffer, input.OffsetBytes)
+		if err != nil {
+			return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to write chunk at offset %d (index %d): %w", input.OffsetBytes, input.ChunkIndex, err)
+		}
+		written = n
 	}
 	if written != len(buffer) {
 		return types.RestoreFileChunkResponse{}, fmt.Errorf(

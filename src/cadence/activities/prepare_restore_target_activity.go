@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"cosmosbdr/src/sourceread"
 	"cosmosbdr/src/types"
 )
 
@@ -15,6 +16,26 @@ func (ja *JobActivities) PrepareRestoreTargetActivity(ctx context.Context, input
 	}
 	if input.OriginalSize < 0 {
 		return types.PrepareRestoreTargetResponse{}, fmt.Errorf("original_size cannot be negative")
+	}
+
+	if input.RemoteIO {
+		if ja.Registry == nil {
+			return types.PrepareRestoreTargetResponse{}, fmt.Errorf("source registry is not configured")
+		}
+		if input.SourceID == "" {
+			return types.PrepareRestoreTargetResponse{}, fmt.Errorf("source_id is required for remote restore")
+		}
+		src, ok := ja.Registry.GetSource(input.SourceID)
+		if !ok {
+			return types.PrepareRestoreTargetResponse{}, fmt.Errorf("unknown source_id %q", input.SourceID)
+		}
+		if err := sourceread.PrepareSFTPRestoreFile(ctx, src, input.DestinationPath, input.OriginalSize); err != nil {
+			return types.PrepareRestoreTargetResponse{}, fmt.Errorf("prepare remote restore target: %w", err)
+		}
+		return types.PrepareRestoreTargetResponse{
+			DestinationPath: input.DestinationPath,
+			OriginalSize:    input.OriginalSize,
+		}, nil
 	}
 
 	parentDir := filepath.Dir(input.DestinationPath)

@@ -111,10 +111,13 @@ type ResolveRestoreSourceRequest struct {
 	ItemPath        string `json:"item_path"`
 	BackupKey       string `json:"backup_key,omitempty"`
 	SourceJobItemID string `json:"source_job_item_id,omitempty"`
+	TargetPath      string `json:"target_path,omitempty"` // optional local override on CosmosBDR host
 }
 
 type ResolveRestoreSourceResponse struct {
 	DestinationPath string          `json:"destination_path"`
+	SourceID        string          `json:"source_id,omitempty"`
+	RemoteIO        bool            `json:"remote_io"`
 	SourceJobItemID string          `json:"source_job_item_id"`
 	RestoreJobItem  *schema.JobItem `json:"restore_job_item"`
 	OriginalSize    int64           `json:"original_size"`
@@ -123,6 +126,8 @@ type ResolveRestoreSourceResponse struct {
 
 type PrepareRestoreTargetRequest struct {
 	DestinationPath string `json:"destination_path"`
+	SourceID        string `json:"source_id,omitempty"`
+	RemoteIO        bool   `json:"remote_io"`
 	OriginalSize    int64  `json:"original_size"`
 }
 
@@ -133,6 +138,8 @@ type PrepareRestoreTargetResponse struct {
 
 type RestoreFileChunkRequest struct {
 	DestinationPath string `json:"destination_path"`
+	SourceID        string `json:"source_id,omitempty"`
+	RemoteIO        bool   `json:"remote_io"`
 	ChunkIndex      int    `json:"chunk_index"`
 	OffsetBytes     int64  `json:"offset_bytes"`
 	LengthBytes     int    `json:"length_bytes"`

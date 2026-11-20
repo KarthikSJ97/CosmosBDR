@@ -70,7 +70,32 @@ func (r *SourceRegistry) ResolveJobPaths(sourceID, relativePath string) (JobPath
 	return layout, nil
 }
 
-// LocalRestorePathForBackupKey returns the on-disk restore target for v1 (local mount + relative path).
+// RestoreDestination describes where a restore should write by default (same place as backup source).
+type RestoreDestination struct {
+	SourceID        string
+	DestinationPath string
+	RemoteIO        bool
+}
+
+// RestoreDestinationForBackupKey resolves the default restore target from backup_key metadata.
+func (r *SourceRegistry) RestoreDestinationForBackupKey(backupKey string) (RestoreDestination, error) {
+	sourceID, rel, err := ParseBackupKey(backupKey)
+	if err != nil {
+		return RestoreDestination{}, err
+	}
+	layout, err := r.ResolveJobPaths(sourceID, rel)
+	if err != nil {
+		return RestoreDestination{}, err
+	}
+	return RestoreDestination{
+		SourceID:        sourceID,
+		DestinationPath: layout.ItemPath,
+		RemoteIO:        layout.RemoteIO,
+	}, nil
+}
+
+// LocalRestorePathForBackupKey maps a backup_key to a path under the default local container mount.
+// Used when target_path explicitly selects a local staging path on the CosmosBDR host.
 func (r *SourceRegistry) LocalRestorePathForBackupKey(backupKey string) (string, error) {
 	_, rel, err := ParseBackupKey(backupKey)
 	if err != nil {
