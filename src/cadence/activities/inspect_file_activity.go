@@ -2,11 +2,9 @@ package activities
 
 import (
 	"context"
-	"cosmosbdr/src/filehash"
 	"cosmosbdr/src/types"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"cosmosbdr/src/db/schema"
@@ -19,20 +17,22 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 		return types.InspectFileResponse{}, fmt.Errorf("itemPath cannot be empty")
 	}
 
-	// 1. Fetch filesystem properties
-	info, err := os.Stat(input.ItemPath)
+	reader, err := ja.openSourceReader(ctx, input.SourceID, input.ItemPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return types.InspectFileResponse{}, fmt.Errorf("source file does not exist: %s", input.ItemPath)
-		}
+		return types.InspectFileResponse{}, fmt.Errorf("open source: %w", err)
+	}
+	defer reader.Close()
+
+	stat, err := reader.Stat(ctx)
+	if err != nil {
 		return types.InspectFileResponse{}, fmt.Errorf("failed to stat file: %w", err)
 	}
-	if info.IsDir() {
+	if stat.IsDir {
 		return types.InspectFileResponse{}, fmt.Errorf("path is a directory: %s", input.ItemPath)
 	}
 
-	currentSize := info.Size()
-	currentModTime := info.ModTime().UTC().Truncate(time.Second)
+	currentSize := stat.Size
+	currentModTime := stat.ModTime.UTC().Truncate(time.Second)
 
 	// 2. Fetch latest historical backup record
 	var historicalItem *schema.JobItem
@@ -76,15 +76,13 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 			_ = json.Unmarshal([]byte(historicalItem.ItemMetadata), &histMeta)
 		}
 
-		// Standardize time formatting down to the second
-		currentModTime := info.ModTime().UTC().Truncate(time.Second)
 		histModTime := histMeta.LastModifiedAt.UTC().Truncate(time.Second)
 
 		// Tier 1 & 2 Check
 		if historicalItem.OriginalSize == currentSize && histModTime.Equal(currentModTime) {
 
 			// Tier 3: Verify File Integrity with a Hash Check
-			currentHash, err := filehash.ContentSHA256(input.ItemPath)
+			currentHash, err := reader.ContentSHA256(ctx)
 			if err != nil {
 				return types.InspectFileResponse{}, fmt.Errorf("failed to compute file hash: %w", err)
 			}

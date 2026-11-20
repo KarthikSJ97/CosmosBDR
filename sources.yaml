@@ -5,3 +5,16 @@ sources:
     container_mount: /host-data
     retention:
       ttl_days: 90
+  # Example SFTP source (requires SSH key in .env at ssh.secret_ref; add when ready):
+  # - id: prod-app-01
+  #   type: sftp
+  #   host: prod.example.com
+  #   port: 22
+  #   user: cosmosbdr-backup
+  #   remote_root: /var/lib/myapp/data
+  #   retention:
+  #     ttl_days: 90
+  #   ssh:
+  #     secret_ref: PROD_APP01_SSH_KEY
+  #     known_hosts_policy: pinned
+  #     host_key_fingerprint: "SHA256:REPLACE_ME"

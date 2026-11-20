@@ -15,8 +15,12 @@ import (
 
 func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (*types.BackupWorkflowResponse, error) {
 	// 1. Configure activity options (timeouts, retries)
+	startToClose := 120 * time.Second
+	if request.Payload.RemoteIO {
+		startToClose = 20 * time.Minute
+	}
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout:    120 * time.Second, // Increased to account for chunk file I/O & hashing
+		StartToCloseTimeout:    startToClose,
 		ScheduleToStartTimeout: 5 * time.Minute,
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
@@ -48,9 +52,11 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 	}
 
 	// 4. Inspect file for duplicate/change checking rules
+	itemPath := filepath.Join(actResp.Job.SourcePath, request.Payload.FileName)
 	inspectRequest := types.InspectFileRequest{
 		JobID:      actResp.Job.ID,
-		ItemPath:   filepath.Join(actResp.Job.SourcePath, request.Payload.FileName),
+		ItemPath:   itemPath,
+		SourceID:   request.Payload.SourceID,
 		BackupKey:  request.Payload.BackupKey,
 	}
 	var inspectResponse types.InspectFileResponse
@@ -145,6 +151,7 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 			JobID:       actResp.Job.ID,
 			ItemID:      inspectResponse.JobItem.ID,
 			ItemPath:    inspectRequest.ItemPath,
+			SourceID:    request.Payload.SourceID,
 			FileName:    request.Payload.FileName,
 			ChunkIndex:  chunkIndex,
 			OffsetBytes: offset,

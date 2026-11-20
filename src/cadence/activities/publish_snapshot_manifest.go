@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"cosmosbdr/src/db/schema"
-	"cosmosbdr/src/filehash"
 	"cosmosbdr/src/manifest"
 	"cosmosbdr/src/types"
 
@@ -33,7 +32,7 @@ func (ja *JobActivities) publishSnapshotManifest(ctx context.Context, item *sche
 	}
 	if checksum == "" {
 		var err error
-		checksum, err = filehash.ContentSHA256(item.ItemPath)
+		checksum, err = ja.hashJobItem(ctx, item.ItemPath, item.BackupKey, "")
 		if err != nil {
 			return "", fmt.Errorf("file checksum for manifest: %w", err)
 		}

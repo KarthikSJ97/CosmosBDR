@@ -2,14 +2,85 @@ package config
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 )
 
 // SourceRegistry is the immutable runtime view of sources and policies.
 type SourceRegistry struct {
-	Sources  map[string]ResolvedSource
-	Policies map[string]BackupPolicy
+	Sources           map[string]ResolvedSource
+	Policies          map[string]BackupPolicy
+	defaultLocalMount string
+}
+
+// DefaultLocalMount is the container path used for v1 restore of remote-backed files.
+func (r *SourceRegistry) DefaultLocalMount() string {
+	return r.defaultLocalMount
+}
+
+func (r *SourceRegistry) indexDefaultLocalMount() {
+	for _, s := range r.Sources {
+		if strings.ToLower(s.Type) == "local" && strings.TrimSpace(s.ContainerMount) != "" {
+			r.defaultLocalMount = s.ContainerMount
+			return
+		}
+	}
+}
+
+// JobPathLayout is the resolved backup job addressing for workflows and readers.
+type JobPathLayout struct {
+	SourcePathPrefix string // stored on jobs.source_path; joined with file_name in workflow
+	ItemPath         string // full path passed to SourceReader
+	BackupKey        string
+	SourceType       string
+	RemoteIO         bool
+}
+
+// ResolveJobPaths maps source_id + relative_path for backup/restore API requests.
+func (r *SourceRegistry) ResolveJobPaths(sourceID, relativePath string) (JobPathLayout, error) {
+	src, ok := r.GetSource(sourceID)
+	if !ok {
+		return JobPathLayout{}, fmt.Errorf("unknown source_id %q", sourceID)
+	}
+	rel := NormalizeRelativePath(relativePath)
+	if rel == "" || rel == "." {
+		return JobPathLayout{}, fmt.Errorf("relative_path is required")
+	}
+	backupKey := FormatBackupKey(sourceID, rel)
+	layout := JobPathLayout{
+		BackupKey:  backupKey,
+		SourceType: strings.ToLower(src.Type),
+	}
+
+	switch strings.ToLower(src.Type) {
+	case "local":
+		if src.ContainerMount == "" {
+			return JobPathLayout{}, fmt.Errorf("source %q: container_mount is required for type local", sourceID)
+		}
+		layout.ItemPath = filepath.Join(src.ContainerMount, rel)
+		layout.SourcePathPrefix = src.ContainerMount
+	case "sftp":
+		layout.ItemPath = path.Join(src.RemoteRoot, rel)
+		layout.SourcePathPrefix = strings.TrimRight(src.RemoteRoot, "/")
+		layout.RemoteIO = true
+	default:
+		return JobPathLayout{}, fmt.Errorf("source %q: unsupported type %q", sourceID, src.Type)
+	}
+	return layout, nil
+}
+
+// LocalRestorePathForBackupKey returns the on-disk restore target for v1 (local mount + relative path).
+func (r *SourceRegistry) LocalRestorePathForBackupKey(backupKey string) (string, error) {
+	_, rel, err := ParseBackupKey(backupKey)
+	if err != nil {
+		return "", err
+	}
+	mount := r.defaultLocalMount
+	if mount == "" {
+		return "", fmt.Errorf("no local container_mount source configured for restore")
+	}
+	return filepath.Join(mount, rel), nil
 }
 
 func (r *SourceRegistry) GetSource(id string) (ResolvedSource, bool) {
@@ -52,28 +123,11 @@ func (r *SourceRegistry) ListPolicies() []BackupPolicy {
 	return out
 }
 
-// ResolveReadPath maps source_id + relative path to the absolute path used by local readers.
+// ResolveReadPath maps source_id + relative path to the object path used by SourceReader.
 func (r *SourceRegistry) ResolveReadPath(sourceID, relativePath string) (absolutePath, backupKey string, err error) {
-	src, ok := r.GetSource(sourceID)
-	if !ok {
-		return "", "", fmt.Errorf("unknown source_id %q", sourceID)
+	layout, err := r.ResolveJobPaths(sourceID, relativePath)
+	if err != nil {
+		return "", "", err
 	}
-	rel := NormalizeRelativePath(relativePath)
-	if rel == "" || rel == "." {
-		return "", "", fmt.Errorf("relative_path is required")
-	}
-	backupKey = FormatBackupKey(sourceID, rel)
-
-	switch strings.ToLower(src.Type) {
-	case "local":
-		if src.ContainerMount == "" {
-			return "", "", fmt.Errorf("source %q: container_mount is required for type local", sourceID)
-		}
-		absolutePath = filepath.Join(src.ContainerMount, rel)
-		return absolutePath, backupKey, nil
-	case "sftp":
-		return "", backupKey, fmt.Errorf("source %q: SFTP read path is not implemented yet (Phase B)", sourceID)
-	default:
-		return "", "", fmt.Errorf("source %q: unsupported type %q", sourceID, src.Type)
-	}
+	return layout.ItemPath, layout.BackupKey, nil
 }

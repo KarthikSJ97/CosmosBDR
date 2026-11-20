@@ -1,6 +1,7 @@
 package activities
 
 import (
+	"cosmosbdr/src/config"
 	"cosmosbdr/src/repositories"
 	"cosmosbdr/src/storage"
 )
@@ -10,4 +11,5 @@ type JobActivities struct {
 	JobItemRepo *repositories.JobItemRepository
 	ChunkRepo   *repositories.ChunkRepository
 	Seaweed     *storage.SeaweedClient
+	Registry    *config.SourceRegistry
 }

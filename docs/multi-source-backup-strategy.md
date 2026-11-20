@@ -438,6 +438,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Postgres bind mount | done | `cosmosbdr_data/postgres` via `.env` |
 | Volume migration | | |
 | Phase A | done | YAML, registry, backup_key, APIs |
+| Phase B | done | SFTP `SourceReader`, inspect/chunk via `sourceread` |
 
 ---
 

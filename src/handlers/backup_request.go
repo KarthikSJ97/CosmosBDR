@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"cosmosbdr/src/config"
@@ -19,14 +18,15 @@ func resolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupW
 		if rel == "" {
 			rel = payload.FileName
 		}
-		mount, backupKey, err := reg.ResolveReadPath(payload.SourceID, rel)
+		layout, err := reg.ResolveJobPaths(payload.SourceID, rel)
 		if err != nil {
 			return err
 		}
-		req.SourcePath = mountDir(mount)
+		req.SourcePath = layout.SourcePathPrefix
 		payload.RelativePath = config.NormalizeRelativePath(rel)
 		payload.FileName = payload.RelativePath
-		payload.BackupKey = backupKey
+		payload.BackupKey = layout.BackupKey
+		payload.RemoteIO = layout.RemoteIO
 		return nil
 	}
 
@@ -39,8 +39,4 @@ func resolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupW
 		payload.RelativePath = config.NormalizeRelativePath(payload.FileName)
 	}
 	return nil
-}
-
-func mountDir(absoluteFilePath string) string {
-	return filepath.Dir(absoluteFilePath)
 }

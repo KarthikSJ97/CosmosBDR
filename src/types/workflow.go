@@ -6,6 +6,7 @@ type BackupJobPayload struct {
 	RelativePath    string `json:"relative_path,omitempty"`
 	SourceID        string `json:"source_id,omitempty"`
 	BackupKey       string `json:"backup_key,omitempty"`
+	RemoteIO        bool   `json:"remote_io,omitempty"`
 	SourceJobItemID string `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
 }
 

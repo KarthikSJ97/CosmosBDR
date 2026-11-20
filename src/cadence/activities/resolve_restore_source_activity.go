@@ -91,8 +91,15 @@ func (ja *JobActivities) ResolveRestoreSourceActivity(ctx context.Context, input
 		}
 	}
 
+	destinationPath := sourceItem.ItemPath
+	if sourceItem.BackupKey != "" && ja.Registry != nil {
+		if localDest, err := ja.Registry.LocalRestorePathForBackupKey(sourceItem.BackupKey); err == nil {
+			destinationPath = localDest
+		}
+	}
+
 	return types.ResolveRestoreSourceResponse{
-		DestinationPath: sourceItem.ItemPath,
+		DestinationPath: destinationPath,
 		SourceJobItemID: sourceItem.ID,
 		RestoreJobItem:  restoreItem,
 		OriginalSize:    sourceItem.OriginalSize,

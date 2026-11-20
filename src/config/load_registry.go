@@ -82,6 +82,8 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 		reg.Policies[pol.ID] = pol
 	}
 
+	reg.indexDefaultLocalMount()
+
 	return reg, nil
 }
 

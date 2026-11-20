@@ -6,11 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 
 	"cosmosbdr/src/db/schema"
+	"cosmosbdr/src/sourceread"
 	"cosmosbdr/src/types"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,28 +17,17 @@ import (
 )
 
 func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input types.ProcessFileChunkRequest) (types.ProcessFileChunkResponse, error) {
-	// 1. Open the source file
-	file, err := os.Open(input.ItemPath)
+	reader, err := ja.openSourceReader(ctx, input.SourceID, input.ItemPath)
 	if err != nil {
-		return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to open file for chunking: %w", err)
+		return types.ProcessFileChunkResponse{}, fmt.Errorf("open source: %w", err)
 	}
-	defer file.Close()
+	defer reader.Close()
 
-	// 2. Seek straight to the target segment offset boundary
-	_, err = file.Seek(input.OffsetBytes, io.SeekStart)
+	buffer, err := sourceread.ReadFullSegment(ctx, reader, input.OffsetBytes, input.LengthBytes)
 	if err != nil {
-		return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to seek to chunk offset: %w", err)
-	}
-
-	// 3. Read exactly LengthBytes into a buffer segment
-	buffer := make([]byte, input.LengthBytes)
-	bytesRead, err := io.ReadFull(file, buffer)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to read block segment: %w", err)
 	}
-
-	// Truncate buffer to actual read length if we hit the end of the file early
-	buffer = buffer[:bytesRead]
+	bytesRead := len(buffer)
 
 	// 4. Content-Addressable Validation: Compute Block Signature Hash (SHA-256)
 	hasher := sha256.New()
