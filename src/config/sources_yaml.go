@@ -22,10 +22,14 @@ type SourceDefinition struct {
 
 // SSHConfig holds non-secret SSH params; secrets are env refs only.
 type SSHConfig struct {
-	SecretRef           string `yaml:"secret_ref"`
-	KnownHostsPolicy    string `yaml:"known_hosts_policy,omitempty"`
-	HostKeyFingerprint  string `yaml:"host_key_fingerprint,omitempty"`
-	ProxyJump           string `yaml:"proxy_jump,omitempty"`
+	SecretRef          string `yaml:"secret_ref"`
+	KnownHostsPolicy   string `yaml:"known_hosts_policy,omitempty"`
+	HostKeyFingerprint string `yaml:"host_key_fingerprint,omitempty"`
+	ProxyJump          string `yaml:"proxy_jump,omitempty"`
+	// DialHost/DialPort override TCP connect target (e.g. host.docker.internal:2222 SSH tunnel on Mac).
+	DialHost     string `yaml:"dial_host,omitempty"`      // or env:VAR
+	DialPort     int    `yaml:"dial_port,omitempty"`      // optional literal; overridden by dial_port_env when set
+	DialPortEnv  string `yaml:"dial_port_env,omitempty"`  // env var name for dial port (Mac tunnel)
 }
 
 // SourceRetention is TTL configuration at source level.

@@ -93,6 +93,12 @@ func (h BackupHandler) TriggerBackup(c *fiber.Ctx) error {
 		})
 	}
 
+	if req.FlowType != string(schema.FlowBackup) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": fmt.Sprintf("flow_type is required and must be %q", schema.FlowBackup),
+		})
+	}
+
 	// Generate a unique Workflow ID based on your domain
 	workflowID := fmt.Sprintf("backup_%s_%s", req.FlowType, uuid.New().String())
 

@@ -51,6 +51,58 @@ policies:
 	}
 }
 
+func TestLoadSourceRegistry_SFTPResolveEnvRefs(t *testing.T) {
+	t.Setenv("TEST_SFTP_HOST", "10.0.0.5")
+	t.Setenv("TEST_SFTP_USER", "backup")
+	t.Setenv("TEST_SFTP_ROOT", "/data")
+	t.Setenv("TEST_SFTP_FP", "SHA256:abc")
+	t.Setenv("TEST_SFTP_DIAL_HOST", "tunnel.local")
+	t.Setenv("TEST_SFTP_DIAL_PORT", "2222")
+	t.Setenv("TEST_SFTP_KEY", "-----BEGIN OPENSSH PRIVATE KEY-----\nMC4w\n-----END OPENSSH PRIVATE KEY-----\n")
+
+	dir := t.TempDir()
+	sources := filepath.Join(dir, "sources.yaml")
+	policies := filepath.Join(dir, "policies.yaml")
+	if err := os.WriteFile(sources, []byte(`version: 1
+sources:
+  - id: remote
+    type: sftp
+    host: env:TEST_SFTP_HOST
+    user: env:TEST_SFTP_USER
+    remote_root: env:TEST_SFTP_ROOT
+    ssh:
+      secret_ref: TEST_SFTP_KEY
+      host_key_fingerprint: env:TEST_SFTP_FP
+      dial_host: env:TEST_SFTP_DIAL_HOST
+      dial_port_env: TEST_SFTP_DIAL_PORT
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policies, []byte(`version: 1
+policies: []
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, err := LoadSourceRegistry(&Config{
+		SourcesConfigPath:        sources,
+		BackupPoliciesConfigPath: policies,
+	})
+	if err != nil {
+		t.Fatalf("LoadSourceRegistry: %v", err)
+	}
+	s, ok := reg.Sources["remote"]
+	if !ok {
+		t.Fatal("missing source")
+	}
+	if s.Host != "10.0.0.5" || s.User != "backup" || s.RemoteRoot != "/data" {
+		t.Fatalf("resolved fields: host=%q user=%q root=%q", s.Host, s.User, s.RemoteRoot)
+	}
+	if s.SSH.HostKeyFingerprint != "SHA256:abc" || s.SSH.DialHost != "tunnel.local" || s.SSH.DialPort != 2222 {
+		t.Fatalf("ssh: fp=%q dial_host=%q dial_port=%d", s.SSH.HostKeyFingerprint, s.SSH.DialHost, s.SSH.DialPort)
+	}
+}
+
 func TestLoadSourceRegistry_SFTPMissingSecret(t *testing.T) {
 	dir := t.TempDir()
 	sources := filepath.Join(dir, "sources.yaml")

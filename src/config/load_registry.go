@@ -51,6 +51,14 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 		if err := validateSource(&src, i); err != nil {
 			return nil, err
 		}
+		if strings.ToLower(src.Type) == "sftp" {
+			if err := resolveSFTPSourceEnv(&src, i); err != nil {
+				return nil, err
+			}
+			if err := validateSource(&src, i); err != nil {
+				return nil, err
+			}
+		}
 		if _, dup := seenSource[src.ID]; dup {
 			return nil, fmt.Errorf("sources.yaml: duplicate source id %q", src.ID)
 		}
@@ -163,5 +171,7 @@ func resolveEnvRef(ref, field string) (string, error) {
 	if val == "" {
 		return "", fmt.Errorf("%s: environment variable %q is not set or empty", field, ref)
 	}
+	// Allow single-line .env PEM values with literal \n sequences.
+	val = strings.ReplaceAll(val, `\n`, "\n")
 	return val, nil
 }

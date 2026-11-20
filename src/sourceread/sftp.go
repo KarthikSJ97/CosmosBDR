@@ -32,7 +32,15 @@ func NewSFTPFileReader(ctx context.Context, src config.ResolvedSource, remoteObj
 		return nil, err
 	}
 
-	addr := net.JoinHostPort(src.Host, fmt.Sprintf("%d", src.Port))
+	dialHost := src.Host
+	dialPort := src.Port
+	if strings.TrimSpace(src.SSH.DialHost) != "" {
+		dialHost = strings.TrimSpace(src.SSH.DialHost)
+	}
+	if src.SSH.DialPort != 0 {
+		dialPort = src.SSH.DialPort
+	}
+	addr := net.JoinHostPort(dialHost, fmt.Sprintf("%d", dialPort))
 	client, err := dialSSH(addr, cfg, src)
 	if err != nil {
 		return nil, fmt.Errorf("ssh dial %s: %w", addr, err)
@@ -106,7 +114,13 @@ func sshClientConfig(src config.ResolvedSource) (*ssh.ClientConfig, error) {
 		User:            src.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         30 * time.Second,
+		// Prefer Ed25519 so pinned host_key_fingerprint matches what admins record from ssh-keyscan.
+		HostKeyAlgorithms: []string{
+			ssh.KeyAlgoED25519,
+			ssh.KeyAlgoECDSA256,
+			ssh.KeyAlgoRSA,
+		},
+		Timeout: 30 * time.Second,
 	}, nil
 }
 
