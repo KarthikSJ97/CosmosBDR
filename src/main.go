@@ -22,8 +22,14 @@ import (
 func main() {
 	log.Println("Initializing CosmosBDR Engine...")
 
-	// 1. Load configuration[cite: 1]
+	// 1. Load configuration
 	cfg := config.LoadConfig()
+
+	sourceRegistry, err := config.LoadSourceRegistry(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load sources/policies config: %v", err)
+	}
+	log.Printf("Loaded %d source(s) and %d backup policy(ies)", len(sourceRegistry.Sources), len(sourceRegistry.Policies))
 
 	// 2. Initialize PostgreSQL Connection & Pool via GORM
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%v/%s?sslmode=%s",
@@ -107,7 +113,7 @@ func main() {
 	})
 
 	// 8. Register handlers
-	handlers.HandlerRegistry(app, cadenceClient, jobItemRepo)
+	handlers.HandlerRegistry(app, cadenceClient, jobItemRepo, sourceRegistry)
 
 	// 9. Start listening on IPv4 loopback / configured port[cite: 1]
 	address := ":" + strconv.Itoa(cfg.Port)

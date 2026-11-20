@@ -44,6 +44,7 @@ func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) 
 	resolveReq := types.ResolveRestoreSourceRequest{
 		JobID:           actResp.Job.ID,
 		ItemPath:        itemPath,
+		BackupKey:       request.Payload.BackupKey,
 		SourceJobItemID: request.Payload.SourceJobItemID,
 	}
 	var resolveResp types.ResolveRestoreSourceResponse

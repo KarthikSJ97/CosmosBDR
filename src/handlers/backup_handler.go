@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"cosmosbdr/src/cadence/workflows"
+	"cosmosbdr/src/config"
+	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/repositories"
 	"cosmosbdr/src/types"
 	"fmt"
@@ -16,26 +18,37 @@ import (
 type BackupHandler struct {
 	CadenceClient cadenceClient.Client
 	JobItemRepo   *repositories.JobItemRepository
+	Registry      *config.SourceRegistry
 }
 
-func NewBackupHandler(cadenceClient cadenceClient.Client, jobItemRepo *repositories.JobItemRepository) *BackupHandler {
-	return &BackupHandler{CadenceClient: cadenceClient, JobItemRepo: jobItemRepo}
+func NewBackupHandler(cadenceClient cadenceClient.Client, jobItemRepo *repositories.JobItemRepository, reg *config.SourceRegistry) *BackupHandler {
+	return &BackupHandler{CadenceClient: cadenceClient, JobItemRepo: jobItemRepo, Registry: reg}
 }
 
 func (h BackupHandler) ListBackups(c *fiber.Ctx) error {
+	backupKey := c.Query("backup_key")
 	itemPath := c.Query("item_path")
-	if itemPath == "" {
-		sourcePath := c.Query("source_path")
-		fileName := c.Query("file_name")
-		if sourcePath == "" || fileName == "" {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "provide item_path, or both source_path and file_name",
-			})
-		}
-		itemPath = filepath.Join(sourcePath, fileName)
-	}
 
-	items, err := h.JobItemRepo.ListEligibleBackupItemsByPath(c.Context(), itemPath)
+	var (
+		items []schema.JobItem
+		err   error
+	)
+
+	if backupKey != "" {
+		items, err = h.JobItemRepo.ListEligibleBackupItemsByBackupKey(c.Context(), backupKey)
+	} else {
+		if itemPath == "" {
+			sourcePath := c.Query("source_path")
+			fileName := c.Query("file_name")
+			if sourcePath == "" || fileName == "" {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+					"error": "provide backup_key, item_path, or both source_path and file_name",
+				})
+			}
+			itemPath = filepath.Join(sourcePath, fileName)
+		}
+		items, err = h.JobItemRepo.ListEligibleBackupItemsByPath(c.Context(), itemPath)
+	}
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to list backups: " + err.Error(),
@@ -47,6 +60,7 @@ func (h BackupHandler) ListBackups(c *fiber.Ctx) error {
 		backups = append(backups, types.AvailableBackup{
 			JobItemID:     item.ID,
 			JobID:         item.JobID,
+			BackupKey:     item.BackupKey,
 			ItemPath:      item.ItemPath,
 			Status:        item.Status,
 			Unchanged:     item.Status == "SKIPPED",
@@ -59,8 +73,9 @@ func (h BackupHandler) ListBackups(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(types.ListAvailableBackupsResponse{
-		ItemPath: itemPath,
-		Backups:  backups,
+		BackupKey: backupKey,
+		ItemPath:  itemPath,
+		Backups:   backups,
 	})
 }
 
@@ -69,6 +84,12 @@ func (h BackupHandler) TriggerBackup(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body: " + err.Error(),
+		})
+	}
+
+	if err := resolveBackupWorkflowRequest(h.Registry, &req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
 		})
 	}
 

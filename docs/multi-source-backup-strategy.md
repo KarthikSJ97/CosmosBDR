@@ -437,7 +437,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Seaweed bind mount | done | `cosmosbdr_data/seaweed` via `.env` |
 | Postgres bind mount | done | `cosmosbdr_data/postgres` via `.env` |
 | Volume migration | | |
-| Phase A | | |
+| Phase A | done | YAML, registry, backup_key, APIs |
 
 ---
 

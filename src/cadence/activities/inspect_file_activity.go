@@ -35,7 +35,12 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 	currentModTime := info.ModTime().UTC().Truncate(time.Second)
 
 	// 2. Fetch latest historical backup record
-	historicalItem, err := ja.JobItemRepo.GetLatestCompletedItemByPath(ctx, input.ItemPath)
+	var historicalItem *schema.JobItem
+	if input.BackupKey != "" {
+		historicalItem, err = ja.JobItemRepo.GetLatestCompletedItemByBackupKey(ctx, input.BackupKey)
+	} else {
+		historicalItem, err = ja.JobItemRepo.GetLatestCompletedItemByPath(ctx, input.ItemPath)
+	}
 	if err != nil {
 		return types.InspectFileResponse{}, err
 	}
@@ -44,6 +49,7 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 	newJobItem := &schema.JobItem{
 		JobID:        input.JobID,
 		ItemPath:     input.ItemPath,
+		BackupKey:    input.BackupKey,
 		OriginalSize: currentSize,
 		Status:       "PENDING", // [4]
 	}

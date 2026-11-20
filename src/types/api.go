@@ -6,6 +6,7 @@ import "time"
 type AvailableBackup struct {
 	JobItemID     string    `json:"job_item_id"`
 	JobID         string    `json:"job_id"`
+	BackupKey     string    `json:"backup_key,omitempty"`
 	ItemPath      string    `json:"item_path"`
 	Status        string    `json:"status"` // COMPLETED or SKIPPED (unchanged dedup)
 	Unchanged     bool      `json:"unchanged"`
@@ -17,6 +18,27 @@ type AvailableBackup struct {
 }
 
 type ListAvailableBackupsResponse struct {
-	ItemPath string            `json:"item_path"`
-	Backups  []AvailableBackup `json:"backups"`
+	ItemPath  string            `json:"item_path,omitempty"`
+	BackupKey string            `json:"backup_key,omitempty"`
+	Backups   []AvailableBackup `json:"backups"`
+}
+
+// SourceSummary is a non-secret view of a configured source.
+type SourceSummary struct {
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	Domain         string `json:"domain,omitempty"`
+	ContainerMount string `json:"container_mount,omitempty"`
+	Host           string `json:"host,omitempty"`
+	TTLDays        int    `json:"ttl_days,omitempty"`
+}
+
+// PolicySummary is a non-secret view of a backup policy.
+type PolicySummary struct {
+	ID        string `json:"id"`
+	SourceID  string `json:"source_id"`
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	Schedule  string `json:"schedule,omitempty"`
+	Enabled   bool   `json:"enabled"`
 }

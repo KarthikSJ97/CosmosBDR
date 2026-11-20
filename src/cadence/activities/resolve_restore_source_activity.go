@@ -27,11 +27,25 @@ func (ja *JobActivities) ResolveRestoreSourceActivity(ctx context.Context, input
 		if sourceItem == nil {
 			return types.ResolveRestoreSourceResponse{}, fmt.Errorf("no eligible backup found for job_item_id %s", input.SourceJobItemID)
 		}
-		if sourceItem.ItemPath != input.ItemPath {
+		if input.BackupKey != "" && sourceItem.BackupKey != input.BackupKey {
+			return types.ResolveRestoreSourceResponse{}, fmt.Errorf(
+				"source job item backup_key %q does not match requested backup_key %q",
+				sourceItem.BackupKey, input.BackupKey,
+			)
+		}
+		if input.BackupKey == "" && sourceItem.ItemPath != input.ItemPath {
 			return types.ResolveRestoreSourceResponse{}, fmt.Errorf(
 				"source job item path %q does not match requested item_path %q",
 				sourceItem.ItemPath, input.ItemPath,
 			)
+		}
+	} else if input.BackupKey != "" {
+		sourceItem, err = ja.JobItemRepo.GetLatestEligibleBackupItemByBackupKey(ctx, input.BackupKey)
+		if err != nil {
+			return types.ResolveRestoreSourceResponse{}, err
+		}
+		if sourceItem == nil {
+			return types.ResolveRestoreSourceResponse{}, fmt.Errorf("no completed backup found for backup_key %s", input.BackupKey)
 		}
 	} else {
 		sourceItem, err = ja.JobItemRepo.GetLatestEligibleBackupItemByPath(ctx, input.ItemPath)

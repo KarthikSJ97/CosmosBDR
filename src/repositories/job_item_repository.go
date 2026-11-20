@@ -21,13 +21,53 @@ func NewJobItemRepository(db *gorm.DB) *JobItemRepository {
 	return &JobItemRepository{DB: db}
 }
 
+func (r *JobItemRepository) backupSnapshotQuery(ctx context.Context) *gorm.DB {
+	return r.DB.WithContext(ctx).
+		Joins("JOIN jobs ON jobs.id = job_items.job_id").
+		Where("jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
+			"SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses)
+}
+
+// GetLatestCompletedItemByBackupKey looks up the most recent completed job item for a logical backup_key.
+func (r *JobItemRepository) GetLatestCompletedItemByBackupKey(ctx context.Context, backupKey string) (*schema.JobItem, error) {
+	var item schema.JobItem
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.backup_key = ?", backupKey).
+		Order("job_items.created_at DESC").
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query historical job item by backup_key: %w", err)
+	}
+	return &item, nil
+}
+
+// ListEligibleBackupItemsByBackupKey returns backup snapshots for a backup_key, newest first.
+func (r *JobItemRepository) ListEligibleBackupItemsByBackupKey(ctx context.Context, backupKey string) ([]schema.JobItem, error) {
+	var items []schema.JobItem
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.backup_key = ?", backupKey).
+		Preload("Job").
+		Order("job_items.created_at DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backup job items by backup_key: %w", err)
+	}
+	return items, nil
+}
+
+// GetLatestEligibleBackupItemByBackupKey is an alias for restore/list use.
+func (r *JobItemRepository) GetLatestEligibleBackupItemByBackupKey(ctx context.Context, backupKey string) (*schema.JobItem, error) {
+	return r.GetLatestCompletedItemByBackupKey(ctx, backupKey)
+}
+
 // GetLatestCompletedItemByPath looks up the most recent completed job item for a given path across past jobs.
 func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, itemPath string) (*schema.JobItem, error) {
 	var item schema.JobItem
-	err := r.DB.WithContext(ctx).
-		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
-			itemPath, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.item_path = ?", itemPath).
 		Order("job_items.created_at DESC").
 		First(&item).Error
 
@@ -44,10 +84,8 @@ func (r *JobItemRepository) GetLatestCompletedItemByPath(ctx context.Context, it
 // GetEligibleBackupItemByID loads a restorable snapshot item from a successful BACKUP job.
 func (r *JobItemRepository) GetEligibleBackupItemByID(ctx context.Context, itemID string) (*schema.JobItem, error) {
 	var item schema.JobItem
-	err := r.DB.WithContext(ctx).
-		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.id = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
-			itemID, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.id = ?", itemID).
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -66,10 +104,8 @@ func (r *JobItemRepository) GetLatestEligibleBackupItemByPath(ctx context.Contex
 // ListEligibleBackupItemsByPath returns backup snapshots for a file (including unchanged dedup skips), newest first.
 func (r *JobItemRepository) ListEligibleBackupItemsByPath(ctx context.Context, itemPath string) ([]schema.JobItem, error) {
 	var items []schema.JobItem
-	err := r.DB.WithContext(ctx).
-		Joins("JOIN jobs ON jobs.id = job_items.job_id").
-		Where("job_items.item_path = ? AND jobs.status = ? AND jobs.flow_type = ? AND job_items.status IN ?",
-			itemPath, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses).
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.item_path = ?", itemPath).
 		Preload("Job").
 		Order("job_items.created_at DESC").
 		Find(&items).Error
@@ -84,6 +120,7 @@ func (r *JobItemRepository) CreateRestoreJobItem(ctx context.Context, restoreJob
 	restoreItem := &schema.JobItem{
 		JobID:        restoreJobID,
 		ItemPath:     source.ItemPath,
+		BackupKey:    source.BackupKey,
 		OriginalSize: source.OriginalSize,
 		Status:       "PENDING",
 		ItemMetadata: source.ItemMetadata,

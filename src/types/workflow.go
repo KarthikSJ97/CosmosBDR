@@ -2,9 +2,11 @@ package types
 
 // BackupJobPayload is shared by backup and restore workflows (flow_type discriminates behavior).
 type BackupJobPayload struct {
-	FileName          string `json:"file_name"`
-	RelativePath      string `json:"relative_path,omitempty"`
-	SourceJobItemID   string `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
+	FileName        string `json:"file_name"`
+	RelativePath    string `json:"relative_path,omitempty"`
+	SourceID        string `json:"source_id,omitempty"`
+	BackupKey       string `json:"backup_key,omitempty"`
+	SourceJobItemID string `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
 }
 
 type BackupWorkflowRequest struct {

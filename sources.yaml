@@ -1,0 +1,7 @@
+version: 1
+sources:
+  - id: local-host-data
+    type: local
+    container_mount: /host-data
+    retention:
+      ttl_days: 90

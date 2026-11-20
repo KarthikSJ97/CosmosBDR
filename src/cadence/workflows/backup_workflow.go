@@ -49,8 +49,9 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 
 	// 4. Inspect file for duplicate/change checking rules
 	inspectRequest := types.InspectFileRequest{
-		JobID:    actResp.Job.ID,
-		ItemPath: filepath.Join(actResp.Job.SourcePath, request.Payload.FileName),
+		JobID:      actResp.Job.ID,
+		ItemPath:   filepath.Join(actResp.Job.SourcePath, request.Payload.FileName),
+		BackupKey:  request.Payload.BackupKey,
 	}
 	var inspectResponse types.InspectFileResponse
 	err = workflow.ExecuteActivity(ctx, jobActivities.InspectFileActivity, inspectRequest).Get(ctx, &inspectResponse)

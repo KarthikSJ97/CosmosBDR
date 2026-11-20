@@ -10,6 +10,7 @@ type JobItem struct {
 	ID            string         `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	JobID         string         `gorm:"type:uuid;not null;index"`
 	ItemPath      string         `gorm:"type:text;not null"`
+	BackupKey     string         `gorm:"type:text;index:idx_job_items_backup_key"`
 	OriginalSize  int64          `gorm:"not null"`
 	ProcessedSize int64          `gorm:"not null"`
 	Checksum      string         `gorm:"type:varchar(64);not null"`

@@ -31,8 +31,9 @@ type UpdateJobStatusRequest struct {
 }
 
 type InspectFileRequest struct {
-	JobID    string `json:"job_id"`
-	ItemPath string `json:"item_path"`
+	JobID     string `json:"job_id"`
+	ItemPath  string `json:"item_path"`
+	BackupKey string `json:"backup_key,omitempty"`
 }
 
 type InspectFileResponse struct {
@@ -106,6 +107,7 @@ type RestoreChunkPlan struct {
 type ResolveRestoreSourceRequest struct {
 	JobID           string `json:"job_id"`
 	ItemPath        string `json:"item_path"`
+	BackupKey       string `json:"backup_key,omitempty"`
 	SourceJobItemID string `json:"source_job_item_id,omitempty"`
 }
 

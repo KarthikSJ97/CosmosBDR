@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"cosmosbdr/src/cadence/workflows"
+	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/types"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,10 +16,11 @@ import (
 
 type RestoreHandler struct {
 	CadenceClient cadenceClient.Client
+	Registry      *config.SourceRegistry
 }
 
-func NewRestoreHandler(cadenceClient cadenceClient.Client) *RestoreHandler {
-	return &RestoreHandler{CadenceClient: cadenceClient}
+func NewRestoreHandler(cadenceClient cadenceClient.Client, reg *config.SourceRegistry) *RestoreHandler {
+	return &RestoreHandler{CadenceClient: cadenceClient, Registry: reg}
 }
 
 func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
@@ -36,15 +39,23 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 			"error": fmt.Sprintf("flow_type must be %q for restore", schema.FlowRestore),
 		})
 	}
-	if req.Payload.FileName == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "payload.file_name is required",
-		})
-	}
-	if req.SourcePath == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "source_path is required (used with file_name to locate the backup)",
-		})
+	if strings.TrimSpace(req.Payload.SourceID) != "" {
+		if err := resolveBackupWorkflowRequest(h.Registry, &req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+	} else {
+		if req.Payload.FileName == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "payload.file_name is required",
+			})
+		}
+		if req.SourcePath == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "source_path is required (used with file_name to locate the backup), or use source_id + relative_path",
+			})
+		}
 	}
 
 	workflowID := fmt.Sprintf("restore_%s_%s", req.FlowType, uuid.New().String())
