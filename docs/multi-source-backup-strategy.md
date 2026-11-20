@@ -373,13 +373,13 @@ The concern is usually **not** a per-volume quota, but **all chunk data competin
 ### Target compose pattern (bind mount)
 
 ```yaml
-# seaweedfs service
+# seaweedfs service — SEAWEED_DATA_PATH must be set in .env (no compose default)
 volumes:
-  - ${SEAWEED_DATA_PATH:-./data/seaweed}:/data
+  - ${SEAWEED_DATA_PATH}:/data
 
-# postgres service (optional same treatment)
+# postgres service — POSTGRES_DATA_PATH must be set in .env
 volumes:
-  - ${POSTGRES_DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+  - ${POSTGRES_DATA_PATH}:/var/lib/postgresql/data
 ```
 
 ---
@@ -390,21 +390,21 @@ Track infrastructure hygiene **before** multi-source phases (Section 10). Do the
 
 ### Prerequisite: durable Docker data on the Mac
 
-- [ ] **1. Pick host paths** (keep separate from backup *sources* and from each other):
+- [x] **1. Pick host paths** (keep separate from backup *sources* and from each other):
   - Sources (already): `HOST_DATA_PATH` → `/host-data` (e.g. test/customer files).
-  - Chunk store: `SEAWEED_DATA_PATH` (e.g. `~/CosmosBDR-data/seaweed` or repo-relative `./data/seaweed`).
-  - Job DB (optional but recommended): `POSTGRES_DATA_PATH` (e.g. `~/CosmosBDR-data/postgres`).
+  - Chunk store: `SEAWEED_DATA_PATH` (e.g. sibling `cosmosbdr_data/seaweed` — absolute path in `.env`).
+  - Job DB: `POSTGRES_DATA_PATH` (e.g. `cosmosbdr_data/postgres`).
   - **Do not** nest Seaweed under `HOST_DATA_PATH` (avoid sweeping the backup store into a source directory policy later).
 
-- [ ] **2. Create directories on the host** before first `docker compose up` with new mounts.
+- [x] **2. Create directories on the host** before first `docker compose up` with new mounts.
 
-- [ ] **3. Add env vars** to `.env` and `.env.example`:
+- [x] **3. Add env vars** to `.env` and `.env.example`:
   - `SEAWEED_DATA_PATH`
   - `POSTGRES_DATA_PATH` (if binding Postgres)
 
-- [ ] **4. Update `docker-compose.yml`**: replace named volumes `seaweeddata` and (if desired) `pgdata` with the bind mounts above; remove unused entries under top-level `volumes:` if nothing else needs them.
+- [x] **4. Update `docker-compose.yml`**: replace named volumes `seaweeddata` and (if desired) `pgdata` with the bind mounts above; remove unused entries under top-level `volumes:` if nothing else needs them.
 
-- [ ] **5. `.gitignore`**: ignore repo-local data dirs (e.g. `data/seaweed/`, `data/postgres/`) if using `./data/...` paths.
+- [x] **5. Data layout**: durable paths live outside the repo (e.g. sibling `cosmosbdr_data/`); no in-repo `data/` tree required. Add `.gitignore` entries only if you use repo-relative mount dirs again.
 
 - [ ] **6. Migrate or reset data** (one-time, when switching from named volumes):
   - **Fresh start:** remove old named volumes (`docker volume rm ...`), empty new host dirs, re-run backups.
@@ -434,8 +434,8 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Seaweed bind mount | | |
-| Postgres bind mount | | |
+| Seaweed bind mount | done | `cosmosbdr_data/seaweed` via `.env` |
+| Postgres bind mount | done | `cosmosbdr_data/postgres` via `.env` |
 | Volume migration | | |
 | Phase A | | |
 

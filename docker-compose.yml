@@ -11,7 +11,8 @@ services:
     ports:
       - "${POSTGRES_DB_PORT:-5432}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Required in .env — no default (see .env.example).
+      - ${POSTGRES_DATA_PATH}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_DB_USERNAME:-postgres} -d ${POSTGRES_DB_NAME:-cosmosbdr}"]
       interval: 5s
@@ -30,7 +31,8 @@ services:
       - "9333:9333"
       - "8888:8888"
     volumes:
-      - seaweeddata:/data
+      # Required in .env — no default (see .env.example).
+      - ${SEAWEED_DATA_PATH}:/data
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8333"]
       interval: 5s
@@ -128,7 +130,3 @@ services:
         condition: service_started
       cadence-register-domain:
         condition: service_completed_successfully
-
-volumes:
-  pgdata:
-  seaweeddata:
