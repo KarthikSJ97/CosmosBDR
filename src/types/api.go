@@ -32,13 +32,3 @@ type SourceSummary struct {
 	Host           string `json:"host,omitempty"`
 	TTLDays        int    `json:"ttl_days,omitempty"`
 }
-
-// PolicySummary is a non-secret view of a backup policy.
-type PolicySummary struct {
-	ID        string `json:"id"`
-	SourceID  string `json:"source_id"`
-	Path      string `json:"path"`
-	Kind      string `json:"kind"`
-	Schedule  string `json:"schedule,omitempty"`
-	Enabled   bool   `json:"enabled"`
-}

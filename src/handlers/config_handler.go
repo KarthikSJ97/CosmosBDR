@@ -30,19 +30,3 @@ func (h *ConfigHandler) ListSources(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"sources": out})
 }
-
-func (h *ConfigHandler) ListPolicies(c *fiber.Ctx) error {
-	policies := h.Registry.ListPolicies()
-	out := make([]types.PolicySummary, 0, len(policies))
-	for _, p := range policies {
-		out = append(out, types.PolicySummary{
-			ID:       p.ID,
-			SourceID: p.SourceID,
-			Path:     p.Path,
-			Kind:     p.Kind,
-			Schedule: p.Schedule,
-			Enabled:  p.Enabled,
-		})
-	}
-	return c.JSON(fiber.Map{"policies": out})
-}

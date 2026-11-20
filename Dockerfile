@@ -31,7 +31,6 @@ COPY --from=builder /app/bin/cosmosbdr /app/cosmosbdr
 # COPY the migration schema directory from the builder stage
 COPY --from=builder /app/src/db/migrations /app/src/db/migrations
 COPY --from=builder /app/sources.yaml /app/sources.yaml
-COPY --from=builder /app/backup-policies.yaml /app/backup-policies.yaml
 
 EXPOSE 8080
 

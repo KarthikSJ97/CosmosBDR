@@ -25,7 +25,6 @@ func HandlerRegistry(app *fiber.App, cadenceClient cadenceClient.Client, jobItem
 	})
 	cfgHandler := NewConfigHandler(reg)
 	v1.Get("/sources", cfgHandler.ListSources)
-	v1.Get("/policies", cfgHandler.ListPolicies)
 
 	backupHandler := NewBackupHandler(cadenceClient, jobItemRepo, reg)
 	v1.Get("/backups", backupHandler.ListBackups)

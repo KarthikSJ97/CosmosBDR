@@ -1,9 +1,0 @@
-version: 1
-# Manual backup uses source_id + relative_path on the API; policies are for scheduled runs (Phase E).
-policies:
-  - id: local-example-nightly
-    source_id: local-host-data
-    path: example.dat
-    kind: file
-    schedule: "0 2 * * *"
-    enabled: false

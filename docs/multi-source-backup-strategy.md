@@ -28,9 +28,10 @@ Treat every backup target as a **logical item** with a stable identity, backed b
 
 | File | Check in? | Contents |
 |------|-----------|----------|
-| `sources.yaml` | Yes | Source definitions, non-secret connection params |
-| `backup-policies.yaml` | Yes | What to back up, schedules, retention, directory rules |
+| `sources.yaml` | Yes | Source definitions, non-secret connection params, per-source retention TTL |
 | `.env` | No | SSH keys/passphrases, key paths, `ENCRYPTION_KEY`, etc. |
+
+Scheduled backup jobs (cron / registry API) use explicit **`source_id` + `relative_path`** in JSON—not a separate `backup-policies.yaml`.
 
 ### Secret resolution
 
@@ -41,7 +42,7 @@ Treat every backup target as a **logical item** with a stable identity, backed b
 ### Validation & loading (`src/config/`)
 
 - **Schema + structs:** JSON Schema (or equivalent) definitions, YAML → Go struct mapping, and `SourceRegistry` loader live under **`src/config/`** (alongside existing env config).
-- **Fail fast:** if `sources.yaml` / `backup-policies.yaml` fail validation, required fields are missing, or mandatory secrets from `.env` cannot be resolved, the **server must not start** (log explicit errors and exit non-zero).
+- **Fail fast:** if `sources.yaml` fails validation, required fields are missing, or mandatory secrets from `.env` cannot be resolved, the **server must not start** (log explicit errors and exit non-zero).
 - **CI (recommended later):** same validation in a test or `go run` check so bad YAML never merges.
 
 ### Example source record
@@ -70,19 +71,19 @@ sources:
       ttl_days: 90
 ```
 
-### Example policy record
+### Example scheduled job record (cron / registry JSON — Phase E)
 
-```yaml
-policies:
-  - id: prod-config-nightly
-    source_id: prod-app-01
-    path: config/app.yml
-    kind: file
-    schedule: "0 2 * * *"
-    enabled: true
+```json
+{
+  "id": "prod-config-nightly",
+  "source_id": "prod-app-01",
+  "relative_path": "config/app.yml",
+  "schedule": "0 2 * * *",
+  "enabled": true
+}
 ```
 
-Manual API triggers use `policy_id` or explicit `(source_id, path)`.
+Manual and scheduled backup triggers use **`source_id` + `relative_path`** (or legacy `source_path` + `file_name`). No `policy_id` layer.
 
 ---
 
@@ -177,7 +178,7 @@ Unchanged graph: Init → Inspect → chunk fan-out → manifest → finalize. R
 2. Child `BackupWorkflow` per file; concurrency cap (e.g. 5–10).
 3. Parent tracks totals/failures; fail-fast vs best-effort policy.
 
-Schema: optional `parent_job_id`, `policy_id` on job payload.
+Schema: optional `parent_job_id`, optional schedule job `id` on job payload for traceability.
 
 ### Schedule vs restore
 
@@ -250,7 +251,7 @@ Shared `chunkcodec` for backup and restore.
 
 **Endpoints (conceptual):**
 
-- **Backup:** `{ "policy_id" }` or `{ "source_id", "relative_path" }`.
+- **Backup:** `{ "source_id", "relative_path" }` in payload (see runbook for shape).
 - **List:** by `backup_key` or `source_id` + path.
 - **Restore:** `{ "backup_key", "source_job_item_id?", "target_path"?: "/host-data/..." }` — without `target_path`, default is the original source location from `backup_key`; `target_path` overrides to a local path on the host.
 
@@ -262,9 +263,9 @@ Shared `chunkcodec` for backup and restore.
 |-------|-------------|
 | **A** | YAML in `src/config/` (schema, structs, loader), fail-fast startup, `SourceRegistry`, `backup_key` in DB/API |
 | **B** | `SFTPReader` + refactor inspect/chunk to `SourceReader` (single file) |
-| **C** | Policies + manual trigger by `policy_id` |
+| **C** | *(skipped)* Named policies / `policy_id` — not used; explicit `source_id` + `relative_path` instead |
 | **D** | Directory parent workflow + globs |
-| **E** | Cadence cron per policy |
+| **E** | Cadence cron (+ optional API registry) from JSON jobs with `source_id`, `relative_path`, `schedule` |
 | **F** | Retention + chunk GC workflow |
 | **G** | Encrypt/compress in chunk pipeline + restore |
 | **H** | `db_dump` pre-step (SSH exec + stage) |
@@ -281,7 +282,7 @@ Shared `chunkcodec` for backup and restore.
 6. **Backup durability:** always Seaweed on CosmosBDR host (bind mount); remotes are ingest sources only
 7. **Restore default:** original backup source path (local mount or SFTP remote); optional `target_path` for local staging on CosmosBDR host
 8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
-9. **Config:** validate `sources.yaml` / `backup-policies.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
+9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 
 ---
 
@@ -290,7 +291,7 @@ Shared `chunkcodec` for backup and restore.
 ```mermaid
 flowchart LR
   subgraph config
-    YAML[sources.yaml + policies.yaml]
+    YAML[sources.yaml]
     ENV[.env secrets]
     YAML --> Registry[SourceRegistry]
     ENV --> Registry
@@ -423,9 +424,9 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Infra | Prerequisite checklist above | §14 |
 | A | YAML schema, loader, `SourceRegistry`, `backup_key` | §10 |
 | B | `SFTPReader` + `SourceReader` refactor | §10 |
-| C | Policies + manual `policy_id` trigger | §10 |
+| C | *(skipped)* — no `policy_id` | §10 |
 | D | Directory workflow | §10 |
-| E | Cadence cron | §10 |
+| E | Cron / schedule registry (`source_id` + `relative_path`) | §10 |
 | F | Retention + chunk GC | §10 |
 | G | Encrypt/compress pipeline | §10 |
 | H | `db_dump` pre-step | §10 |
@@ -439,6 +440,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Volume migration | | |
 | Phase A | done | YAML, registry, backup_key, APIs |
 | Phase B | done | SFTP `SourceReader`, inspect/chunk via `sourceread` |
+| Phase C | skipped | No `backup-policies.yaml` or `policy_id`; cron JSON uses explicit paths |
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
 
 ---

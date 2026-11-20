@@ -39,8 +39,7 @@ type Config struct {
 	CompressionAlgorithm string
 
 	// Backup platform YAML (Phase A)
-	SourcesConfigPath        string
-	BackupPoliciesConfigPath string
+	SourcesConfigPath string
 }
 
 func LoadConfig() *Config {
@@ -77,8 +76,7 @@ func LoadConfig() *Config {
 		EncryptionKey:        getEnvString("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"), // 32-char default for dev
 		CompressionAlgorithm: getEnvString("COMPRESSION_ALGORITHM", "gzip"),
 
-		SourcesConfigPath:        getEnvString("SOURCES_CONFIG_PATH", "sources.yaml"),
-		BackupPoliciesConfigPath: getEnvString("BACKUP_POLICIES_CONFIG_PATH", "backup-policies.yaml"),
+		SourcesConfigPath: getEnvString("SOURCES_CONFIG_PATH", "sources.yaml"),
 	}
 }
 

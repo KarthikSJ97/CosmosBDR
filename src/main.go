@@ -27,9 +27,9 @@ func main() {
 
 	sourceRegistry, err := config.LoadSourceRegistry(cfg)
 	if err != nil {
-		log.Fatalf("Failed to load sources/policies config: %v", err)
+		log.Fatalf("Failed to load sources config: %v", err)
 	}
-	log.Printf("Loaded %d source(s) and %d backup policy(ies)", len(sourceRegistry.Sources), len(sourceRegistry.Policies))
+	log.Printf("Loaded %d source(s)", len(sourceRegistry.Sources))
 
 	// 2. Initialize PostgreSQL Connection & Pool via GORM
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%v/%s?sslmode=%s",

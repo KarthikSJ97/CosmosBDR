@@ -7,10 +7,9 @@ import (
 	"strings"
 )
 
-// SourceRegistry is the immutable runtime view of sources and policies.
+// SourceRegistry is the immutable runtime view of configured backup sources.
 type SourceRegistry struct {
 	Sources           map[string]ResolvedSource
-	Policies          map[string]BackupPolicy
 	defaultLocalMount string
 }
 
@@ -113,11 +112,6 @@ func (r *SourceRegistry) GetSource(id string) (ResolvedSource, bool) {
 	return s, ok
 }
 
-func (r *SourceRegistry) GetPolicy(id string) (BackupPolicy, bool) {
-	p, ok := r.Policies[id]
-	return p, ok
-}
-
 // ListSources returns sources in stable ID order.
 func (r *SourceRegistry) ListSources() []ResolvedSource {
 	ids := make([]string, 0, len(r.Sources))
@@ -135,15 +129,6 @@ func (r *SourceRegistry) ListSources() []ResolvedSource {
 	out := make([]ResolvedSource, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, r.Sources[id])
-	}
-	return out
-}
-
-// ListPolicies returns all policies.
-func (r *SourceRegistry) ListPolicies() []BackupPolicy {
-	out := make([]BackupPolicy, 0, len(r.Policies))
-	for _, p := range r.Policies {
-		out = append(out, p)
 	}
 	return out
 }
