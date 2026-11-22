@@ -94,6 +94,31 @@ curl -sS -X POST http://localhost:8080/api/v1/backups \
 
 `flow_type` must be **`BACKUP`**.
 
+**Directory backup (Phase D):** include a `directory` block; `relative_path` is the folder under `remote_root` (use `"."` for all of `remote_root`).
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/backups \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "flow_type": "BACKUP",
+    "payload": {
+      "source_id": "win-home-laptop",
+      "relative_path": ".",
+      "directory": {
+        "selection": "matched",
+        "include": [
+          { "type": "glob", "pattern": "**/*.pdf" }
+        ],
+        "exclude": [
+          { "type": "glob", "pattern": "**/.cache/**" }
+        ]
+      }
+    }
+  }'
+```
+
+Each matched file runs a child file backup; list versions per file with `backup_key=<source_id>:<relative_path>`.
+
 4. **List:** `curl -sS 'http://localhost:8080/api/v1/backups?backup_key=win-home-laptop:My%20Memes.pdf'`
 5. **Restore (default → same path on remote):**
 

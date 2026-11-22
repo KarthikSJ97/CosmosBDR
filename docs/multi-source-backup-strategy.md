@@ -175,7 +175,7 @@ Unchanged graph: Init → Inspect → chunk fan-out → manifest → finalize. R
 **`DirectoryBackupWorkflow` (parent):**
 
 1. `ListDirectoryActivity`: walk under `relative_path`, apply **selection** rules below.
-2. Child `BackupWorkflow` per matched file; concurrency cap (e.g. 5–10).
+2. Child `BackupWorkflow` per matched file; **`CADENCE_MAX_CONCURRENT_WORKFLOWS`** for child batches. All activities share **`CADENCE_WORKER_MAX_CONCURRENT_ACTIVITIES`** (worker pool + per-wave schedule in chunk workflows).
 3. Parent tracks totals/failures; fail-fast vs best-effort policy.
 
 Schema: optional `parent_job_id`, optional schedule job `id` on job payload for traceability. Parent job **payload stores the resolved directory filter** (selection, patterns, limits) for audit / DR drills.
@@ -517,6 +517,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase B | done | SFTP `SourceReader`, inspect/chunk via `sourceread` |
 | Phase C | skipped | No `backup-policies.yaml` or `policy_id`; cron JSON uses explicit paths |
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
+| Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block |
 
 ---
 

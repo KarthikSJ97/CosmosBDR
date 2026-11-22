@@ -14,6 +14,12 @@ type ItemMetadata struct {
 	ManifestKey    string    `json:"manifest_key,omitempty"`
 }
 
+// CadenceRuntimeLimits is resolved on the worker from server config (not API input).
+type CadenceRuntimeLimits struct {
+	MaxConcurrentWorkflows       int `json:"max_concurrent_workflows"`
+	WorkerMaxConcurrentActivities int `json:"worker_max_concurrent_activities"`
+}
+
 type InitJobRequest struct {
 	FlowType   string           `json:"flow_type"`
 	SourcePath string           `json:"source_path"`

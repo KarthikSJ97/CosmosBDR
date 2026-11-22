@@ -64,25 +64,38 @@ func RestoreWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) 
 	}
 
 	if resolveResp.OriginalSize > 0 && len(resolveResp.Chunks) > 0 {
-		var futures []workflow.Future
-		for _, chunk := range resolveResp.Chunks {
-			chunkReq := types.RestoreFileChunkRequest{
-				DestinationPath: resolveResp.DestinationPath,
-				SourceID:        resolveResp.SourceID,
-				RemoteIO:        resolveResp.RemoteIO,
-				ChunkIndex:      chunk.ChunkIndex,
-				OffsetBytes:     chunk.OffsetBytes,
-				LengthBytes:     chunk.LengthBytes,
-				ChunkHash:       chunk.ChunkHash,
-				SeaweedKey:      chunk.SeaweedKey,
-			}
-			futures = append(futures, workflow.ExecuteActivity(ctx, jobActivities.RestoreFileChunkActivity, chunkReq))
+		runtimeLim, err := loadCadenceRuntimeLimits(ctx, jobActivities)
+		if err != nil {
+			return nil, fmt.Errorf("load runtime limits: %w", err)
 		}
+		waveCap := runtimeLim.WorkerMaxConcurrentActivities
+		chunks := resolveResp.Chunks
 
-		for i, future := range futures {
-			var chunkResp types.RestoreFileChunkResponse
-			if err := future.Get(ctx, &chunkResp); err != nil {
-				return nil, fmt.Errorf("parallel restore chunk failed at index %d: %w", i, err)
+		for i := 0; i < len(chunks); i += waveCap {
+			end := i + waveCap
+			if end > len(chunks) {
+				end = len(chunks)
+			}
+			batch := chunks[i:end]
+			var futures []workflow.Future
+			for _, chunk := range batch {
+				chunkReq := types.RestoreFileChunkRequest{
+					DestinationPath: resolveResp.DestinationPath,
+					SourceID:        resolveResp.SourceID,
+					RemoteIO:        resolveResp.RemoteIO,
+					ChunkIndex:      chunk.ChunkIndex,
+					OffsetBytes:     chunk.OffsetBytes,
+					LengthBytes:     chunk.LengthBytes,
+					ChunkHash:       chunk.ChunkHash,
+					SeaweedKey:      chunk.SeaweedKey,
+				}
+				futures = append(futures, workflow.ExecuteActivity(ctx, jobActivities.RestoreFileChunkActivity, chunkReq))
+			}
+			for j, future := range futures {
+				var chunkResp types.RestoreFileChunkResponse
+				if err := future.Get(ctx, &chunkResp); err != nil {
+					return nil, fmt.Errorf("restore chunk failed at index %d: %w", batch[j].ChunkIndex, err)
+				}
 			}
 		}
 	} else {

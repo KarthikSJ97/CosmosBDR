@@ -12,4 +12,7 @@ type JobActivities struct {
 	ChunkRepo   *repositories.ChunkRepository
 	Seaweed     *storage.SeaweedClient
 	Registry    *config.SourceRegistry
+
+	CadenceMaxConcurrentWorkflows       int
+	CadenceWorkerMaxConcurrentActivities int
 }

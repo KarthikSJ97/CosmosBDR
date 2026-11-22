@@ -40,6 +40,9 @@ type Config struct {
 
 	// Backup platform YAML (Phase A)
 	SourcesConfigPath string
+
+	CadenceMaxConcurrentWorkflows        int // directory parent: child workflow batch size
+	CadenceWorkerMaxConcurrentActivities int // global cap: worker + in-workflow activity waves
 }
 
 func LoadConfig() *Config {
@@ -77,6 +80,9 @@ func LoadConfig() *Config {
 		CompressionAlgorithm: getEnvString("COMPRESSION_ALGORITHM", "gzip"),
 
 		SourcesConfigPath: getEnvString("SOURCES_CONFIG_PATH", "sources.yaml"),
+
+		CadenceMaxConcurrentWorkflows:        getEnvInt("CADENCE_MAX_CONCURRENT_WORKFLOWS", DefaultCadenceMaxConcurrentWorkflows),
+		CadenceWorkerMaxConcurrentActivities: getEnvInt("CADENCE_WORKER_MAX_CONCURRENT_ACTIVITIES", DefaultCadenceWorkerMaxConcurrentActivities),
 	}
 }
 

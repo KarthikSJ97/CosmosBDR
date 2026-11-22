@@ -70,22 +70,28 @@ func main() {
 	jobItemRepo := repositories.NewJobItemRepository(gormDB)
 	chunkRepo := repositories.NewChunkRepository(gormDB)
 	jobActivities := &activities.JobActivities{
-		JobRepo:     jobRepo,
-		JobItemRepo: jobItemRepo,
-		ChunkRepo:   chunkRepo,
-		Seaweed:     seaweedClient,
-		Registry:    sourceRegistry,
+		JobRepo:                        jobRepo,
+		JobItemRepo:                    jobItemRepo,
+		ChunkRepo:                      chunkRepo,
+		Seaweed:                        seaweedClient,
+		Registry:                       sourceRegistry,
+		CadenceMaxConcurrentWorkflows:       cfg.EffectiveCadenceMaxConcurrentWorkflows(),
+		CadenceWorkerMaxConcurrentActivities: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),
 	}
 
 	// 6. Start Cadence Worker in a background goroutine using NewV2
 	domain := "samples-domain"
 	taskQueueName := "cosmosbdr-task-queue"
 
+	workerOpts := worker.Options{
+		MaxConcurrentActivityExecutionSize: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),
+	}
+
 	w, err := worker.NewV2(
 		serviceClient,
 		domain,
 		taskQueueName,
-		worker.Options{},
+		workerOpts,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Cadence worker: %v", err)
@@ -93,6 +99,7 @@ func main() {
 
 	// Register the workfows and activities here
 	w.RegisterWorkflow(workflows.BackupWorkflow)
+	w.RegisterWorkflow(workflows.DirectoryBackupWorkflow)
 	w.RegisterWorkflow(workflows.RestoreWorkflow)
 	w.RegisterActivity(jobActivities.InitJobActivity)
 	w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
@@ -102,6 +109,8 @@ func main() {
 	w.RegisterActivity(jobActivities.PublishSnapshotManifestActivity)
 	w.RegisterActivity(jobActivities.FinalizeSkippedBackupItemActivity)
 	w.RegisterActivity(jobActivities.FinalizeJobActivity)
+	w.RegisterActivity(jobActivities.ListDirectoryActivity)
+	w.RegisterActivity(jobActivities.GetCadenceRuntimeLimitsActivity)
 	w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
 	w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
 	w.RegisterActivity(jobActivities.RestoreFileChunkActivity)

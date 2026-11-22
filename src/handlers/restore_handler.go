@@ -57,7 +57,6 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 			})
 		}
 	}
-
 	workflowID := fmt.Sprintf("restore_%s_%s", req.FlowType, uuid.New().String())
 	options := cadenceClient.StartWorkflowOptions{
 		ID:                           workflowID,

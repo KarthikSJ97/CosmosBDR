@@ -138,40 +138,44 @@ func BackupWorkflow(ctx workflow.Context, request types.BackupWorkflowRequest) (
 	var offset int64 = 0
 	chunkIndex := 0
 
-	// Create an array list slice to capture asynchronous future handlers
-	var futures []workflow.Future
+	runtimeLim, err := loadCadenceRuntimeLimits(ctx, jobActivities)
+	if err != nil {
+		return nil, fmt.Errorf("load runtime limits: %w", err)
+	}
+	waveCap := runtimeLim.WorkerMaxConcurrentActivities
 
 	for offset < fileSize {
-		length := chunkSize
-		if offset+length > fileSize {
-			length = fileSize - offset // Truncate segment bounds for remaining tail bytes
+		var batch []workflow.Future
+		var batchIndexes []int
+
+		for len(batch) < waveCap && offset < fileSize {
+			length := chunkSize
+			if offset+length > fileSize {
+				length = fileSize - offset
+			}
+
+			chunkReq := types.ProcessFileChunkRequest{
+				JobID:       actResp.Job.ID,
+				ItemID:      inspectResponse.JobItem.ID,
+				ItemPath:    inspectRequest.ItemPath,
+				SourceID:    request.Payload.SourceID,
+				FileName:    request.Payload.FileName,
+				ChunkIndex:  chunkIndex,
+				OffsetBytes: offset,
+				LengthBytes: int(length),
+			}
+			batch = append(batch, workflow.ExecuteActivity(ctx, jobActivities.ProcessFileChunkActivity, chunkReq))
+			batchIndexes = append(batchIndexes, chunkIndex)
+
+			offset += chunkSize
+			chunkIndex++
 		}
 
-		chunkReq := types.ProcessFileChunkRequest{
-			JobID:       actResp.Job.ID,
-			ItemID:      inspectResponse.JobItem.ID,
-			ItemPath:    inspectRequest.ItemPath,
-			SourceID:    request.Payload.SourceID,
-			FileName:    request.Payload.FileName,
-			ChunkIndex:  chunkIndex,
-			OffsetBytes: offset,
-			LengthBytes: int(length),
-		}
-
-		// Execute activity asynchronously (returns a Future immediately without blocking)
-		future := workflow.ExecuteActivity(ctx, jobActivities.ProcessFileChunkActivity, chunkReq)
-		futures = append(futures, future)
-
-		offset += chunkSize
-		chunkIndex++
-	}
-
-	// 6. Gather and synchronize all concurrent thread executions (Fan-in)
-	for i, future := range futures {
-		var chunkResp types.ProcessFileChunkResponse
-		err := future.Get(ctx, &chunkResp)
-		if err != nil {
-			return nil, fmt.Errorf("parallel chunk processing failed at index %d: %w", i, err)
+		for i, future := range batch {
+			var chunkResp types.ProcessFileChunkResponse
+			if err := future.Get(ctx, &chunkResp); err != nil {
+				return nil, fmt.Errorf("chunk processing failed at index %d: %w", batchIndexes[i], err)
+			}
 		}
 	}
 

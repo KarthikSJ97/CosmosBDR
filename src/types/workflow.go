@@ -2,18 +2,21 @@ package types
 
 // BackupJobPayload is shared by backup and restore workflows (flow_type discriminates behavior).
 type BackupJobPayload struct {
-	FileName        string `json:"file_name"`
-	RelativePath    string `json:"relative_path,omitempty"`
-	SourceID        string `json:"source_id,omitempty"`
-	BackupKey       string `json:"backup_key,omitempty"`
-	RemoteIO        bool   `json:"remote_io,omitempty"`
-	SourceJobItemID string `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
+	FileName        string          `json:"file_name"`
+	RelativePath    string          `json:"relative_path,omitempty"`
+	SourceID        string          `json:"source_id,omitempty"`
+	BackupKey       string          `json:"backup_key,omitempty"`
+	RemoteIO        bool            `json:"remote_io,omitempty"`
+	SourceJobItemID string          `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
+	Directory       *DirectoryScope `json:"directory,omitempty"`          // set → directory parent workflow
+	ParentJobID     string          `json:"parent_job_id,omitempty"`      // child file backup of a directory job
 }
 
 type BackupWorkflowRequest struct {
 	FlowType   string           `json:"flow_type"`
 	SourcePath string           `json:"source_path"`
 	TargetPath string           `json:"target_path"`
+	ListRootPath string         `json:"-"` // directory backup: set by API resolver only
 	Payload    BackupJobPayload `json:"payload"`
 }
 
