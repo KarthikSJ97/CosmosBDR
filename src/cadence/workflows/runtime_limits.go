@@ -11,10 +11,7 @@ import (
 
 // loadCadenceRuntimeLimits reads fan-out limits from worker config via activity (not workflow input / API).
 func loadCadenceRuntimeLimits(ctx workflow.Context, jobActivities *activities.JobActivities) (types.CadenceRuntimeLimits, error) {
-	limAO := workflow.ActivityOptions{
-		StartToCloseTimeout:    30 * time.Second,
-		ScheduleToStartTimeout: time.Minute,
-	}
+	limAO := workflowActivityOptions(30 * time.Second)
 	limCtx := workflow.WithActivityOptions(ctx, limAO)
 	var lim types.CadenceRuntimeLimits
 	err := workflow.ExecuteActivity(limCtx, jobActivities.GetCadenceRuntimeLimitsActivity).Get(limCtx, &lim)

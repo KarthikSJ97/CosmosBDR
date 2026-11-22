@@ -176,7 +176,9 @@ Unchanged graph: Init → Inspect → chunk fan-out → manifest → finalize. R
 
 1. `ListDirectoryActivity`: walk under `relative_path`, apply **selection** rules below.
 2. Child `BackupWorkflow` per matched file; **`CADENCE_MAX_CONCURRENT_WORKFLOWS`** for child batches. All activities share **`CADENCE_WORKER_MAX_CONCURRENT_ACTIVITIES`** (worker pool + per-wave schedule in chunk workflows).
-3. Parent tracks totals/failures; fail-fast vs best-effort policy.
+3. Parent tracks totals/failures; **best-effort** (continue other files if a child fails).
+
+**Failure handling (v1):** Activities use a default retry policy (5 attempts, exponential backoff). After permanent activity/workflow failure: `FailJobExecutionActivity` marks `PENDING` job items **`FAILED`**, then job **`FAILED`** + `error_message`. Partial Seaweed chunk blobs from aborted runs are **not** deleted here — **Phase F** refcount GC.
 
 Schema: optional `parent_job_id`, optional schedule job `id` on job payload for traceability. Parent job **payload stores the resolved directory filter** (selection, patterns, limits) for audit / DR drills.
 

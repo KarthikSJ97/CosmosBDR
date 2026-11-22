@@ -23,10 +23,7 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 		listStartToClose = directoryListTimeout
 	}
 
-	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout:    listStartToClose,
-		ScheduleToStartTimeout: 5 * time.Minute,
-	})
+	ctx = workflow.WithActivityOptions(ctx, workflowActivityOptions(listStartToClose))
 
 	actReq := types.InitJobRequest{
 		FlowType:   request.FlowType,
@@ -48,6 +45,7 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 		Status: "IN_PROGRESS",
 	}
 	if err := workflow.ExecuteActivity(ctx, jobActivities.UpdateJobStatusActivity, statusInput).Get(ctx, nil); err != nil {
+		recordWorkflowFailure(ctx, jobActivities, parentJobID, "", err)
 		return nil, fmt.Errorf("update parent job status: %w", err)
 	}
 
@@ -68,7 +66,7 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 
 	var listResp types.ListDirectoryResponse
 	if err := workflow.ExecuteActivity(ctx, jobActivities.ListDirectoryActivity, listReq).Get(ctx, &listResp); err != nil {
-		failParent(ctx, jobActivities, parentJobID, err)
+		recordWorkflowFailure(ctx, jobActivities, parentJobID, "", err)
 		return nil, fmt.Errorf("list directory: %w", err)
 	}
 
@@ -79,16 +77,12 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 
 	runtimeLim, err := loadCadenceRuntimeLimits(ctx, jobActivities)
 	if err != nil {
-		failParent(ctx, jobActivities, parentJobID, err)
+		recordWorkflowFailure(ctx, jobActivities, parentJobID, "", err)
 		return nil, fmt.Errorf("load runtime limits: %w", err)
 	}
 	concurrency := runtimeLim.MaxConcurrentWorkflows
 
-	childAO := workflow.ActivityOptions{
-		StartToCloseTimeout:    2 * time.Hour,
-		ScheduleToStartTimeout: 5 * time.Minute,
-	}
-	childCtxBase := workflow.WithActivityOptions(ctx, childAO)
+	childCtxBase := workflow.WithActivityOptions(ctx, workflowActivityOptions(2*time.Hour))
 
 	remoteIO := request.Payload.RemoteIO
 	var succeeded, failed int
@@ -179,16 +173,6 @@ func childBackupRequest(parent types.BackupWorkflowRequest, parentJobID, fileRel
 			ParentJobID:  parentJobID,
 		},
 	}, nil
-}
-
-func failParent(ctx workflow.Context, jobActivities *activities.JobActivities, jobID string, cause error) {
-	msg := cause.Error()
-	req := types.FinalizeJobRequest{
-		JobID:        jobID,
-		Status:       "FAILED",
-		ErrorMessage: &msg,
-	}
-	_ = workflow.ExecuteActivity(ctx, jobActivities.FinalizeJobActivity, req).Get(ctx, nil)
 }
 
 func sanitizeWorkflowIDPart(rel string) string {

@@ -103,6 +103,13 @@ type FinalizeJobRequest struct {
 	ErrorMessage *string `json:"error_message"` // Populated if status is FAILED
 }
 
+// FailJobExecutionRequest marks incomplete job items FAILED before job finalization.
+type FailJobExecutionRequest struct {
+	JobID     string `json:"job_id"`
+	JobItemID string `json:"job_item_id,omitempty"` // empty = all PENDING items on job
+	Reason    string `json:"reason"`
+}
+
 // RestoreChunkPlan describes one ordered segment needed to assemble the file on disk.
 type RestoreChunkPlan struct {
 	ChunkIndex  int    `json:"chunk_index"`

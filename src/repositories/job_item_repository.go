@@ -2,9 +2,12 @@ package repositories
 
 import (
 	"context"
-	"cosmosbdr/src/db/schema"
+	"encoding/json"
 	"errors"
 	"fmt"
+
+	"cosmosbdr/src/db/schema"
+	"cosmosbdr/src/types"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -191,6 +194,35 @@ func (r *JobItemRepository) UpdateSkippedBackupItemProof(ctx context.Context, it
 		}).Error
 	if err != nil {
 		return fmt.Errorf("failed to record skipped backup proof: %w", err)
+	}
+	return nil
+}
+
+// FailIncompleteJobItems marks PENDING items as FAILED (partial uploads; chunk GC is Phase F).
+func (r *JobItemRepository) FailIncompleteJobItems(ctx context.Context, jobID, itemID, reason string) error {
+	if jobID == "" {
+		return fmt.Errorf("job_id is required")
+	}
+	q := r.DB.WithContext(ctx).Model(&schema.JobItem{}).
+		Where("job_id = ? AND status = ?", jobID, "PENDING")
+	if itemID != "" {
+		q = q.Where("id = ?", itemID)
+	}
+	meta := datatypes.JSON([]byte(`{}`))
+	if reason != "" {
+		metaObj := types.ItemMetadata{
+			SkipReason: reason,
+		}
+		if b, err := json.Marshal(metaObj); err == nil {
+			meta = datatypes.JSON(b)
+		}
+	}
+	result := q.Updates(map[string]interface{}{
+		"status":         "FAILED",
+		"item_metadata": meta,
+	})
+	if result.Error != nil {
+		return result.Error
 	}
 	return nil
 }

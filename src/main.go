@@ -111,6 +111,7 @@ func main() {
 	w.RegisterActivity(jobActivities.FinalizeJobActivity)
 	w.RegisterActivity(jobActivities.ListDirectoryActivity)
 	w.RegisterActivity(jobActivities.GetCadenceRuntimeLimitsActivity)
+	w.RegisterActivity(jobActivities.FailJobExecutionActivity)
 	w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
 	w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
 	w.RegisterActivity(jobActivities.RestoreFileChunkActivity)
