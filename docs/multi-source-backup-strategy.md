@@ -2,7 +2,7 @@
 
 Living design doc for phased implementation. Reference this document when building any step/phase.
 
-**Last updated:** 2026-11-20 (locked restore, retention, config validation decisions)
+**Last updated:** 2026-11-22 (locked directory selection: modes, glob + regex, precedence)
 
 ---
 
@@ -174,11 +174,85 @@ Unchanged graph: Init → Inspect → chunk fan-out → manifest → finalize. R
 
 **`DirectoryBackupWorkflow` (parent):**
 
-1. List files (`include`/`exclude` globs, depth/size limits).
-2. Child `BackupWorkflow` per file; concurrency cap (e.g. 5–10).
+1. `ListDirectoryActivity`: walk under `relative_path`, apply **selection** rules below.
+2. Child `BackupWorkflow` per matched file; concurrency cap (e.g. 5–10).
 3. Parent tracks totals/failures; fail-fast vs best-effort policy.
 
-Schema: optional `parent_job_id`, optional schedule job `id` on job payload for traceability.
+Schema: optional `parent_job_id`, optional schedule job `id` on job payload for traceability. Parent job **payload stores the resolved directory filter** (selection, patterns, limits) for audit / DR drills.
+
+**Trigger (conceptual):** `source_id` + directory `relative_path` + optional `directory` block. Single-file jobs unchanged (`relative_path` + `file_name` or path to one file).
+
+#### Selection modes (v1 — locked)
+
+Two explicit modes; default **`all`** (DR-friendly: tree as-is under the root).
+
+| Mode | Meaning |
+|------|---------|
+| **`all`** | Every **file** under `relative_path` is a candidate, then **exclude** patterns (and size limits) apply. **`include` is ignored** (must be empty or omitted). |
+| **`matched`** | **`include` required** (≥1 pattern). A file must match **at least one** include (glob or regex), then **exclude** removes matches. |
+
+#### Patterns: glob and regex (v1 — locked)
+
+Each include/exclude entry is a small object (not a bare string):
+
+```json
+{ "type": "glob", "pattern": "**/*.yml" }
+{ "type": "regex", "pattern": "\\.(sql\\.gz|dump)$" }
+```
+
+- **Glob:** `path/filepath`-style matching on the file path **relative to the directory root** (`relative_path`), `/` separators, case-sensitive (document if we add fold-case later).
+- **Regex:** Go `regexp` syntax; match against the same **relative path** string (not basename-only unless the pattern says so).
+- Invalid regex → **fail the list activity** (parent job fails fast); do not silently skip.
+
+#### Precedence (no contradiction solver)
+
+Fixed order; predictable, same as common backup tools:
+
+1. Walk files under `relative_path` (directories traversed, never backed up as items).
+2. Apply **`max_depth`** if set (omit or `null` = **unlimited** — default for DR).
+3. Apply **`selection` mode** (`all` vs `matched` + include).
+4. Apply **`exclude`** (glob or regex); **exclude wins** if both include and exclude match.
+5. Optional **`min_file_bytes`** / **`max_file_bytes`**.
+
+#### Example (`matched` + glob and regex)
+
+```json
+{
+  "flow_type": "backup",
+  "source_id": "prod-app-01",
+  "relative_path": "data",
+  "directory": {
+    "selection": "matched",
+    "include": [
+      { "type": "glob", "pattern": "**/*.json" },
+      { "type": "regex", "pattern": "^config/.*\\.ya?ml$" }
+    ],
+    "exclude": [
+      { "type": "glob", "pattern": "**/staging/**" },
+      { "type": "regex", "pattern": "\\.swp$" }
+    ],
+    "max_depth": null,
+    "max_file_bytes": null
+  }
+}
+```
+
+#### Example (full tree for DR, junk excluded)
+
+```json
+{
+  "flow_type": "backup",
+  "source_id": "local-host-data",
+  "relative_path": ".",
+  "directory": {
+    "selection": "all",
+    "exclude": [
+      { "type": "glob", "pattern": "**/.cache/**" },
+      { "type": "glob", "pattern": "**/*.tmp" }
+    ]
+  }
+}
+```
 
 ### Schedule vs restore
 
@@ -264,7 +338,7 @@ Shared `chunkcodec` for backup and restore.
 | **A** | YAML in `src/config/` (schema, structs, loader), fail-fast startup, `SourceRegistry`, `backup_key` in DB/API |
 | **B** | `SFTPReader` + refactor inspect/chunk to `SourceReader` (single file) |
 | **C** | *(skipped)* Named policies / `policy_id` — not used; explicit `source_id` + `relative_path` instead |
-| **D** | Directory parent workflow + globs |
+| **D** | Directory parent workflow + selection (`all` / `matched`), glob + regex, limits |
 | **E** | Cadence cron (+ optional API registry) from JSON jobs with `source_id`, `relative_path`, `schedule` |
 | **F** | Retention + chunk GC workflow |
 | **G** | Encrypt/compress in chunk pipeline + restore |
@@ -283,6 +357,7 @@ Shared `chunkcodec` for backup and restore.
 7. **Restore default:** original backup source path (local mount or SFTP remote); optional `target_path` for local staging on CosmosBDR host
 8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
 9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
+10. **Directory selection (Phase D):** modes **`all`** (default) and **`matched`**; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; **`max_depth`** optional, default unlimited
 
 ---
 
