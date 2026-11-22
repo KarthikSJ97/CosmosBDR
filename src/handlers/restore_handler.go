@@ -40,7 +40,7 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 		})
 	}
 	if strings.TrimSpace(req.Payload.SourceID) != "" {
-		if err := resolveBackupWorkflowRequest(h.Registry, &req); err != nil {
+		if err := ResolveBackupWorkflowRequest(h.Registry, &req); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": err.Error(),
 			})

@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"cosmosbdr/src/cadence/workflows"
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/repositories"
 	"cosmosbdr/src/types"
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -91,7 +89,7 @@ func (h BackupHandler) TriggerBackup(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := resolveBackupWorkflowRequest(h.Registry, &req); err != nil {
+	if err := ResolveBackupWorkflowRequest(h.Registry, &req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": err.Error(),
 		})
@@ -102,25 +100,16 @@ func (h BackupHandler) TriggerBackup(c *fiber.Ctx) error {
 		})
 	}
 
-	options := cadenceClient.StartWorkflowOptions{
-		TaskList: "cosmosbdr-task-queue",
-	}
-
-	var we cadenceClient.WorkflowRun
-	var workflowLabel string
-	var err error
-
-	if isDirectoryBackup(&req) {
+	workflowLabel := "Backup"
+	options := cadenceClient.StartWorkflowOptions{TaskList: TaskQueue}
+	if IsDirectoryBackup(&req) {
 		options.ID = fmt.Sprintf("backup_dir_%s", uuid.New().String())
-		options.ExecutionStartToCloseTimeout = 6 * time.Hour
 		workflowLabel = "Directory backup"
-		we, err = h.CadenceClient.ExecuteWorkflow(c.Context(), options, workflows.DirectoryBackupWorkflow, req)
 	} else {
 		options.ID = fmt.Sprintf("backup_%s_%s", req.FlowType, uuid.New().String())
-		options.ExecutionStartToCloseTimeout = 1 * time.Hour
-		workflowLabel = "Backup"
-		we, err = h.CadenceClient.ExecuteWorkflow(c.Context(), options, workflows.BackupWorkflow, req)
 	}
+
+	we, err := StartBackupWorkflow(c.Context(), h.CadenceClient, req, options)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to start backup workflow: " + err.Error(),

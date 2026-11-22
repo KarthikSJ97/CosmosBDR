@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strconv"
@@ -60,9 +61,8 @@ func main() {
 	cadenceClient, serviceClient, err := cadence.InitClient(cfg)
 	if err != nil {
 		log.Printf("Warning: Could not connect to Cadence server: %v.", err)
-	} else {
-		// Cadence client manages connection lifecycle through YARPC dispatcher
-		_ = cadenceClient
+		cadenceClient = nil
+		serviceClient = nil
 	}
 
 	// 5. Initialize Repositories and Activities for the Worker
@@ -81,47 +81,57 @@ func main() {
 
 	// 6. Start Cadence Worker in a background goroutine using NewV2
 	domain := "samples-domain"
-	taskQueueName := "cosmosbdr-task-queue"
+	taskQueueName := handlers.TaskQueue
 
 	workerOpts := worker.Options{
 		MaxConcurrentActivityExecutionSize: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),
 	}
 
-	w, err := worker.NewV2(
-		serviceClient,
-		domain,
-		taskQueueName,
-		workerOpts,
-	)
-	if err != nil {
-		log.Fatalf("Failed to create Cadence worker: %v", err)
-	}
-
-	// Register the workfows and activities here
-	w.RegisterWorkflow(workflows.BackupWorkflow)
-	w.RegisterWorkflow(workflows.DirectoryBackupWorkflow)
-	w.RegisterWorkflow(workflows.RestoreWorkflow)
-	w.RegisterActivity(jobActivities.InitJobActivity)
-	w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
-	w.RegisterActivity(jobActivities.InspectFileActivity)
-	w.RegisterActivity(jobActivities.ProcessFileChunkActivity)
-	w.RegisterActivity(jobActivities.CompleteJobItemActivity)
-	w.RegisterActivity(jobActivities.PublishSnapshotManifestActivity)
-	w.RegisterActivity(jobActivities.FinalizeSkippedBackupItemActivity)
-	w.RegisterActivity(jobActivities.FinalizeJobActivity)
-	w.RegisterActivity(jobActivities.ListDirectoryActivity)
-	w.RegisterActivity(jobActivities.GetCadenceRuntimeLimitsActivity)
-	w.RegisterActivity(jobActivities.FailJobExecutionActivity)
-	w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
-	w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
-	w.RegisterActivity(jobActivities.RestoreFileChunkActivity)
-
-	go func() {
-		log.Println("Starting Cadence Worker...")
-		if err := w.Start(); err != nil {
-			log.Fatalf("Cadence worker failed to start: %v", err)
+	if serviceClient == nil {
+		if len(sourceRegistry.ListEnabledBackupSchedules()) > 0 {
+			log.Fatalf("sources.yaml has enabled backup schedules but Cadence is unavailable")
 		}
-	}()
+		log.Printf("Cadence worker not started (no service client)")
+	} else {
+		w, err := worker.NewV2(
+			serviceClient,
+			domain,
+			taskQueueName,
+			workerOpts,
+		)
+		if err != nil {
+			log.Fatalf("Failed to create Cadence worker: %v", err)
+		}
+
+		w.RegisterWorkflow(workflows.BackupWorkflow)
+		w.RegisterWorkflow(workflows.DirectoryBackupWorkflow)
+		w.RegisterWorkflow(workflows.RestoreWorkflow)
+		w.RegisterActivity(jobActivities.InitJobActivity)
+		w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
+		w.RegisterActivity(jobActivities.InspectFileActivity)
+		w.RegisterActivity(jobActivities.ProcessFileChunkActivity)
+		w.RegisterActivity(jobActivities.CompleteJobItemActivity)
+		w.RegisterActivity(jobActivities.PublishSnapshotManifestActivity)
+		w.RegisterActivity(jobActivities.FinalizeSkippedBackupItemActivity)
+		w.RegisterActivity(jobActivities.FinalizeJobActivity)
+		w.RegisterActivity(jobActivities.ListDirectoryActivity)
+		w.RegisterActivity(jobActivities.GetCadenceRuntimeLimitsActivity)
+		w.RegisterActivity(jobActivities.FailJobExecutionActivity)
+		w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
+		w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
+		w.RegisterActivity(jobActivities.RestoreFileChunkActivity)
+
+		go func() {
+			log.Println("Starting Cadence Worker...")
+			if err := w.Start(); err != nil {
+				log.Fatalf("Cadence worker failed to start: %v", err)
+			}
+		}()
+
+		if err := handlers.RegisterBackupSchedules(context.Background(), cadenceClient, sourceRegistry); err != nil {
+			log.Fatalf("Failed to register backup schedules: %v", err)
+		}
+	}
 
 	// 7. Initialize Fiber app instance[cite: 1]
 	app := fiber.New(fiber.Config{

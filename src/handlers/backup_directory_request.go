@@ -9,11 +9,11 @@ import (
 	"cosmosbdr/src/types"
 )
 
-func isDirectoryBackup(req *types.BackupWorkflowRequest) bool {
+func IsDirectoryBackup(req *types.BackupWorkflowRequest) bool {
 	return req.Payload.Directory != nil
 }
 
-func resolveDirectoryBackupRequest(reg *config.SourceRegistry, req *types.BackupWorkflowRequest) error {
+func ResolveDirectoryBackupRequest(reg *config.SourceRegistry, req *types.BackupWorkflowRequest) error {
 	payload := &req.Payload
 	if strings.TrimSpace(payload.SourceID) == "" {
 		return fmt.Errorf("source_id is required for directory backup")

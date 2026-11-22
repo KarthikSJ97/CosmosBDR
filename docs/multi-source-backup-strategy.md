@@ -2,7 +2,7 @@
 
 Living design doc for phased implementation. Reference this document when building any step/phase.
 
-**Last updated:** 2026-11-22 (locked directory selection: modes, glob + regex, precedence)
+**Last updated:** 2026-11-22 (Phase E: backup schedules nested under `sources.yaml`)
 
 ---
 
@@ -28,10 +28,10 @@ Treat every backup target as a **logical item** with a stable identity, backed b
 
 | File | Check in? | Contents |
 |------|-----------|----------|
-| `sources.yaml` | Yes | Source definitions, non-secret connection params, per-source retention TTL |
+| `sources.yaml` | Yes | Source definitions, SSH connection params (refs only), **per-source retention TTL**, **per-source backup schedules (Cadence cron)** |
 | `.env` | No | SSH keys/passphrases, key paths, `ENCRYPTION_KEY`, etc. |
 
-Scheduled backup jobs (cron / registry API) use explicit **`source_id` + `relative_path`** in JSON—not a separate `backup-policies.yaml`.
+**Single file for backup config:** connection, retention, and scheduled jobs all live under each source in `sources.yaml`—no separate `backup-jobs.json` or `backup-policies.yaml`.
 
 ### Secret resolution
 
@@ -69,21 +69,25 @@ sources:
     # Retention TTL is configured per source (see §6, §15)
     retention:
       ttl_days: 90
+    # Cadence cron schedules (Phase E) — one row per target; stable `id` becomes workflow id suffix
+    schedules:
+      - id: prod-config-nightly
+        relative_path: config/app.yml
+        schedule: "0 2 * * *"
+        enabled: true
+      - id: prod-data-weekly
+        relative_path: data
+        schedule: "0 3 * * 0"
+        directory:
+          selection: all
+          exclude:
+            - type: glob
+              pattern: "**/*.tmp"
 ```
 
-### Example scheduled job record (cron / registry JSON — Phase E)
+Each schedule row is **`relative_path` + `schedule`** under its source. **Single-file:** omit `directory`. **Directory tree (Phase D):** set `directory` (same shape as `POST /backups`). Schedule `id` values must be **unique across the whole file** (not just within one source). `enabled: false` skips Cadence registration but still validates at load.
 
-```json
-{
-  "id": "prod-config-nightly",
-  "source_id": "prod-app-01",
-  "relative_path": "config/app.yml",
-  "schedule": "0 2 * * *",
-  "enabled": true
-}
-```
-
-Manual and scheduled backup triggers use **`source_id` + `relative_path`** (or legacy `source_path` + `file_name`). No `policy_id` layer.
+Manual HTTP triggers still use **`source_id` + `relative_path`** (or legacy `source_path` + `file_name`). No `policy_id` layer.
 
 ---
 
@@ -256,12 +260,11 @@ Fixed order; predictable, same as common backup tools:
 }
 ```
 
-### Schedule vs restore
+### Schedule vs restore (Phase E — implemented)
 
-- **Backup:** Cadence cron per policy (or one scheduler workflow)—durable, visible in Cadence UI.
+- **Backup schedules:** each enabled `sources.yaml` `schedules[]` row → Cadence cron at process startup (`workflow_id` = `scheduled_backup_<id>`). Each tick runs `BackupWorkflow` or `DirectoryBackupWorkflow` with the same resolved request as `POST /backups`. Job payload includes `schedule_job_id` when cron-fired.
+- **Startup:** worker registers crons after workflows are registered. If the workflow id already exists, startup logs and continues (change cron expression → terminate the old workflow in Cadence UI, then restart CosmosBDR).
 - **Restore:** manual HTTP only (no cron).
-
-Alternatives later: in-process `robfig/cron` or external cron → API.
 
 ---
 
@@ -341,7 +344,7 @@ Shared `chunkcodec` for backup and restore.
 | **B** | `SFTPReader` + refactor inspect/chunk to `SourceReader` (single file) |
 | **C** | *(skipped)* Named policies / `policy_id` — not used; explicit `source_id` + `relative_path` instead |
 | **D** | Directory parent workflow + selection (`all` / `matched`), glob + regex, limits |
-| **E** | Cadence cron (+ optional API registry) from JSON jobs with `source_id`, `relative_path`, `schedule` |
+| **E** | Cadence cron registration at startup from `sources.yaml` `schedules` (per source); stable workflow id per schedule `id` |
 | **F** | Retention + chunk GC workflow |
 | **G** | Encrypt/compress in chunk pipeline + restore |
 | **H** | `db_dump` pre-step (SSH exec + stage) |
@@ -360,6 +363,7 @@ Shared `chunkcodec` for backup and restore.
 8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
 9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 10. **Directory selection (Phase D):** modes **`all`** (default) and **`matched`**; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; **`max_depth`** optional, default unlimited
+11. **Schedules (Phase E):** nested under each source in **`sources.yaml`** only; global unique schedule `id`; Cadence cron per enabled row → `BackupWorkflow` or `DirectoryBackupWorkflow`
 
 ---
 
@@ -503,7 +507,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | B | `SFTPReader` + `SourceReader` refactor | §10 |
 | C | *(skipped)* — no `policy_id` | §10 |
 | D | Directory workflow | §10 |
-| E | Cron / schedule registry (`source_id` + `relative_path`) | §10 |
+| E | Cadence cron from `sources.yaml` schedules | §10 |
 | F | Retention + chunk GC | §10 |
 | G | Encrypt/compress pipeline | §10 |
 | H | `db_dump` pre-step | §10 |
@@ -517,9 +521,10 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Volume migration | | |
 | Phase A | done | YAML, registry, backup_key, APIs |
 | Phase B | done | SFTP `SourceReader`, inspect/chunk via `sourceread` |
-| Phase C | skipped | No `backup-policies.yaml` or `policy_id`; cron JSON uses explicit paths |
+| Phase C | skipped | No `policy_id`; schedules live under each source in `sources.yaml` |
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
 | Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block |
+| Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
 
 ---
 

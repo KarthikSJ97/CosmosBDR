@@ -1,5 +1,7 @@
 package config
 
+import "cosmosbdr/src/types"
+
 // SourcesFile is the on-disk shape of sources.yaml.
 type SourcesFile struct {
 	Version int              `yaml:"version"`
@@ -18,6 +20,22 @@ type SourceDefinition struct {
 	RemoteRoot      string          `yaml:"remote_root,omitempty"`
 	SSH             *SSHConfig      `yaml:"ssh,omitempty"`
 	Retention       SourceRetention `yaml:"retention,omitempty"`
+	Schedules       []BackupSchedule `yaml:"schedules,omitempty"`
+}
+
+// BackupSchedule is one Cadence cron target under a source (Phase E).
+type BackupSchedule struct {
+	ID           string                `yaml:"id"`
+	RelativePath string                `yaml:"relative_path"`
+	Schedule     string                `yaml:"schedule"`
+	Enabled      *bool                 `yaml:"enabled,omitempty"` // default true when omitted
+	Directory    *types.DirectoryScope `yaml:"directory,omitempty"`
+}
+
+// ResolvedBackupSchedule is a validated schedule ready for cron registration.
+type ResolvedBackupSchedule struct {
+	SourceID string
+	BackupSchedule
 }
 
 // SSHConfig holds non-secret SSH params; secrets are env refs only.

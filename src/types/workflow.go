@@ -10,6 +10,7 @@ type BackupJobPayload struct {
 	SourceJobItemID string          `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
 	Directory       *DirectoryScope `json:"directory,omitempty"`          // set → directory parent workflow
 	ParentJobID     string          `json:"parent_job_id,omitempty"`      // child file backup of a directory job
+	ScheduleJobID   string          `json:"schedule_job_id,omitempty"`    // sources.yaml schedules[].id when cron-fired
 }
 
 type BackupWorkflowRequest struct {

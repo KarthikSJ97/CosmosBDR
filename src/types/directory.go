@@ -2,18 +2,18 @@ package types
 
 // DirectoryScope configures Phase D directory backup selection (see docs/multi-source-backup-strategy.md).
 type DirectoryScope struct {
-	Selection      string        `json:"selection"` // "all" | "matched"
-	Include        []PathPattern `json:"include,omitempty"`
-	Exclude        []PathPattern `json:"exclude,omitempty"`
-	MaxDepth       *int          `json:"max_depth"` // nil = unlimited
-	MinFileBytes   *int64        `json:"min_file_bytes,omitempty"`
-	MaxFileBytes   *int64        `json:"max_file_bytes,omitempty"`
+	Selection    string        `json:"selection" yaml:"selection"` // "all" | "matched"
+	Include      []PathPattern `json:"include,omitempty" yaml:"include,omitempty"`
+	Exclude      []PathPattern `json:"exclude,omitempty" yaml:"exclude,omitempty"`
+	MaxDepth     *int          `json:"max_depth" yaml:"max_depth"` // nil = unlimited
+	MinFileBytes *int64        `json:"min_file_bytes,omitempty" yaml:"min_file_bytes,omitempty"`
+	MaxFileBytes *int64        `json:"max_file_bytes,omitempty" yaml:"max_file_bytes,omitempty"`
 }
 
 // PathPattern is one glob or regex rule against paths relative to the directory root.
 type PathPattern struct {
-	Type    string `json:"type"` // "glob" | "regex"
-	Pattern string `json:"pattern"`
+	Type    string `json:"type" yaml:"type"` // "glob" | "regex"
+	Pattern string `json:"pattern" yaml:"pattern"`
 }
 
 // ListedBackupFile is one file selected for backup under a directory job.

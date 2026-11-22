@@ -79,6 +79,70 @@ sources:
 	}
 }
 
+func TestLoadSourceRegistry_SchedulesUnderSource(t *testing.T) {
+	dir := t.TempDir()
+	sources := filepath.Join(dir, "sources.yaml")
+	if err := os.WriteFile(sources, []byte(`version: 1
+sources:
+  - id: local-host-data
+    type: local
+    container_mount: /host-data
+    schedules:
+      - id: nightly-config
+        relative_path: config/app.yml
+        schedule: "0 2 * * *"
+      - id: weekly-tree
+        relative_path: data
+        schedule: "0 3 * * 0"
+        enabled: false
+        directory:
+          selection: all
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, err := LoadSourceRegistry(&Config{SourcesConfigPath: sources})
+	if err != nil {
+		t.Fatalf("LoadSourceRegistry: %v", err)
+	}
+	enabled := reg.ListEnabledBackupSchedules()
+	if len(enabled) != 1 {
+		t.Fatalf("enabled schedules: got %d want 1", len(enabled))
+	}
+	if enabled[0].ID != "nightly-config" || enabled[0].SourceID != "local-host-data" {
+		t.Fatalf("schedule: %+v", enabled[0])
+	}
+}
+
+func TestLoadSourceRegistry_DuplicateScheduleID(t *testing.T) {
+	dir := t.TempDir()
+	sources := filepath.Join(dir, "sources.yaml")
+	if err := os.WriteFile(sources, []byte(`version: 1
+sources:
+  - id: a
+    type: local
+    container_mount: /host-data
+    schedules:
+      - id: same-id
+        relative_path: foo.txt
+        schedule: "0 1 * * *"
+  - id: b
+    type: local
+    container_mount: /other
+    schedules:
+      - id: same-id
+        relative_path: bar.txt
+        schedule: "0 2 * * *"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadSourceRegistry(&Config{SourcesConfigPath: sources})
+	if err == nil {
+		t.Fatal("expected duplicate schedule id error")
+	}
+}
+
 func TestLoadSourceRegistry_SFTPMissingSecret(t *testing.T) {
 	dir := t.TempDir()
 	sources := filepath.Join(dir, "sources.yaml")

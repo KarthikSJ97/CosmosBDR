@@ -34,8 +34,13 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 	}
 
 	seenSource := make(map[string]struct{})
+	seenScheduleIDs := make(map[string]string)
 	for i, src := range sourcesFile.Sources {
 		if err := validateSource(&src, i); err != nil {
+			return nil, err
+		}
+		prefix := fmt.Sprintf("sources[%d] (%s)", i, src.ID)
+		if err := validateBackupSchedules(prefix, src.ID, src.Schedules, seenScheduleIDs); err != nil {
 			return nil, err
 		}
 		if strings.ToLower(src.Type) == "sftp" {

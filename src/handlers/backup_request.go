@@ -8,11 +8,11 @@ import (
 	"cosmosbdr/src/types"
 )
 
-// resolveBackupWorkflowRequest fills source_path, file_name, and payload backup identity fields.
+// ResolveBackupWorkflowRequest fills source_path, file_name, and payload backup identity fields.
 // Supports source_id + relative_path (preferred) or legacy source_path + file_name.
-func resolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupWorkflowRequest) error {
-	if isDirectoryBackup(req) {
-		return resolveDirectoryBackupRequest(reg, req)
+func ResolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupWorkflowRequest) error {
+	if IsDirectoryBackup(req) {
+		return ResolveDirectoryBackupRequest(reg, req)
 	}
 
 	payload := &req.Payload

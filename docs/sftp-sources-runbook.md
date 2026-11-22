@@ -56,6 +56,7 @@ Use the **ED25519** `SHA256:…` value in `.env` as `<PREFIX>_HOST_KEY_FINGERPRI
 2. Set `HOST_DATA_PATH`, Seaweed/Postgres paths, Cadence/Postgres/Seaweed credentials.
 3. Per SFTP source id (e.g. `win-home-laptop` → `WIN_HOME_LAPTOP_*`): **HOST, USER, REMOTE_ROOT, SSH_KEY, HOST_KEY_FINGERPRINT**.
 4. Commit **`sources.yaml`** only (uses `env:VAR`); keep real IPs/users in `.env`.
+5. Optional **scheduled backups:** under the source, add `schedules` (see [multi-source-backup-strategy.md](./multi-source-backup-strategy.md) §1). Restart `cosmosbdr` after changes; crons appear in Cadence as `scheduled_backup_<schedule_id>`.
 
 ### Docker Desktop (Mac) — one-time
 

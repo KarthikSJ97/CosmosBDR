@@ -112,6 +112,24 @@ func (r *SourceRegistry) GetSource(id string) (ResolvedSource, bool) {
 	return s, ok
 }
 
+// ListEnabledBackupSchedules returns all enabled schedules in stable source/schedule order.
+func (r *SourceRegistry) ListEnabledBackupSchedules() []ResolvedBackupSchedule {
+	sources := r.ListSources()
+	out := make([]ResolvedBackupSchedule, 0)
+	for _, src := range sources {
+		for _, sch := range src.Schedules {
+			if !scheduleEnabled(sch) {
+				continue
+			}
+			out = append(out, ResolvedBackupSchedule{
+				SourceID:       src.ID,
+				BackupSchedule: sch,
+			})
+		}
+	}
+	return out
+}
+
 // ListSources returns sources in stable ID order.
 func (r *SourceRegistry) ListSources() []ResolvedSource {
 	ids := make([]string, 0, len(r.Sources))
