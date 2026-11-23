@@ -58,6 +58,10 @@ Use the **ED25519** `SHA256:…` value in `.env` as `<PREFIX>_HOST_KEY_FINGERPRI
 4. Commit **`sources.yaml`** only (uses `env:VAR`); keep real IPs/users in `.env`.
 5. Optional **scheduled backups:** under the source, add `schedules` (see [multi-source-backup-strategy.md](./multi-source-backup-strategy.md) §1). Restart `cosmosbdr` after changes; crons appear in Cadence as `scheduled_backup_<schedule_id>`.
 
+### Same remote host: files and DB (recommended)
+
+Use **two `source_id`s** in `sources.yaml` (same `host` / `ssh` / `remote_root` via YAML anchors)—one **without** `pre_backup` for normal files, one **with** `pre_backup` for Tier 2 dump-and-backup schedules. Do not mix ad-hoc file paths on a source that has `pre_backup` (dump runs before every file job on that id). Full pattern: [multi-source-backup-strategy.md §2](./multi-source-backup-strategy.md) (“One remote host → multiple `source_id`s”).
+
 ### Docker Desktop (Mac) — one-time
 
 - **Local Network** → **Docker** on.

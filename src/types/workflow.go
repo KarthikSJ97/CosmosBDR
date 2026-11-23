@@ -11,6 +11,7 @@ type BackupJobPayload struct {
 	Directory       *DirectoryScope `json:"directory,omitempty"`          // set → directory parent workflow
 	ParentJobID     string          `json:"parent_job_id,omitempty"`      // child file backup of a directory job
 	ScheduleJobID   string          `json:"schedule_job_id,omitempty"`    // sources.yaml schedules[].id when cron-fired
+	PreBackup       bool            `json:"pre_backup,omitempty"`         // Phase H: SSH dump before inspect/chunks
 }
 
 type BackupWorkflowRequest struct {

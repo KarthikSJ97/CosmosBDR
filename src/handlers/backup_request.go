@@ -22,12 +22,21 @@ func ResolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupW
 		if rel == "" {
 			rel = payload.FileName
 		}
-		layout, err := reg.ResolveJobPaths(payload.SourceID, rel)
+		src, ok := reg.GetSource(payload.SourceID)
+		if !ok {
+			return fmt.Errorf("unknown source_id %q", payload.SourceID)
+		}
+		pathForJob := rel
+		if src.HasPreBackup() {
+			payload.PreBackup = true
+			pathForJob = src.DumpRelativePath(rel)
+		}
+		layout, err := reg.ResolveJobPaths(payload.SourceID, pathForJob)
 		if err != nil {
 			return err
 		}
 		req.SourcePath = layout.SourcePathPrefix
-		payload.RelativePath = config.NormalizeRelativePath(rel)
+		payload.RelativePath = config.NormalizeRelativePath(pathForJob)
 		payload.FileName = payload.RelativePath
 		payload.BackupKey = layout.BackupKey
 		payload.RemoteIO = layout.RemoteIO

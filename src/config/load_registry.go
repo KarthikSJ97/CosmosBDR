@@ -39,7 +39,11 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 		if err := validateSource(&src, i); err != nil {
 			return nil, err
 		}
-		prefix := fmt.Sprintf("sources[%d] (%s)", i, src.ID)
+		prefix := fmt.Sprintf("sources[%d]", i)
+		if err := validatePreBackup(prefix, &src); err != nil {
+			return nil, err
+		}
+		prefix = fmt.Sprintf("sources[%d] (%s)", i, src.ID)
 		if err := validateBackupSchedules(prefix, src.ID, src.Schedules, seenScheduleIDs); err != nil {
 			return nil, err
 		}
@@ -63,6 +67,11 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 				return nil, err
 			}
 			resolved.ResolvedSecret = secret
+			pre, err := resolvePreBackupEnv(prefix, &src)
+			if err != nil {
+				return nil, err
+			}
+			resolved.ResolvedPreBackup = pre
 		}
 		reg.Sources[src.ID] = resolved
 	}

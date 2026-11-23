@@ -56,6 +56,18 @@ func runBackupWorkflow(
 		return nil, "", fmt.Errorf("failed to update job status to IN_PROGRESS: %w", err)
 	}
 
+	var preBackupResp types.RunPreBackupResponse
+	if request.Payload.PreBackup {
+		preCtx := workflow.WithActivityOptions(ctx, workflowActivityOptions(2*time.Hour))
+		preReq := types.RunPreBackupRequest{
+			SourceID:     request.Payload.SourceID,
+			RelativePath: request.Payload.RelativePath,
+		}
+		if err := workflow.ExecuteActivity(preCtx, jobActivities.RunPreBackupActivity, preReq).Get(ctx, &preBackupResp); err != nil {
+			return nil, "", fmt.Errorf("pre_backup failed: %w", err)
+		}
+	}
+
 	itemPath := filepath.Join(actResp.Job.SourcePath, request.Payload.FileName)
 	inspectRequest := types.InspectFileRequest{
 		JobID:     actResp.Job.ID,
@@ -98,6 +110,7 @@ func runBackupWorkflow(
 			return nil, jobItemID, fmt.Errorf("failed to finalize skipped job status: %w", err)
 		}
 
+		maybeCleanupPreBackup(ctx, jobActivities, request.Payload.SourceID, preBackupResp)
 		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, jobItemID, nil
 	}
 
@@ -129,6 +142,7 @@ func runBackupWorkflow(
 			return nil, jobItemID, fmt.Errorf("failed to finalize empty file job: %w", err)
 		}
 
+		maybeCleanupPreBackup(ctx, jobActivities, request.Payload.SourceID, preBackupResp)
 		return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, jobItemID, nil
 	}
 
@@ -207,5 +221,20 @@ func runBackupWorkflow(
 		return nil, jobItemID, fmt.Errorf("failed to finalize job status: %w", err)
 	}
 
+	maybeCleanupPreBackup(ctx, jobActivities, request.Payload.SourceID, preBackupResp)
 	return &types.BackupWorkflowResponse{JobID: actResp.Job.ID}, jobItemID, nil
+}
+
+func maybeCleanupPreBackup(ctx workflow.Context, jobActivities *activities.JobActivities, sourceID string, pre types.RunPreBackupResponse) {
+	if !pre.CleanupAfter || pre.DumpRelativePath == "" {
+		return
+	}
+	cleanupReq := types.CleanupPreBackupRequest{
+		SourceID:         sourceID,
+		DumpRelativePath: pre.DumpRelativePath,
+		CleanupAfter:     true,
+	}
+	if err := workflow.ExecuteActivity(ctx, jobActivities.CleanupPreBackupActivity, cleanupReq).Get(ctx, nil); err != nil {
+		workflow.GetLogger(ctx).Warn("pre_backup remote cleanup failed", zap.Error(err))
+	}
 }

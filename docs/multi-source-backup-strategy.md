@@ -185,6 +185,69 @@ BackupWorkflow
 | Non-standard engine (Oracle RMAN, etc.) | **Tier 2** — `pre_backup.command` or customer script in **Tier 1** |
 | RDS / Cloud SQL as primary DR | Vendor snapshot/PITR; Cosmos for **exports** or files on a bastion |
 
+#### One remote host → multiple `source_id`s (locked)
+
+**`source_id` is a policy boundary**, not “one physical machine.” Register **two (or more) sources** for the same SSH host when you mix **DB dump jobs** with **ordinary file backups**.
+
+| Why not one source? | Detail |
+|---------------------|--------|
+| **`pre_backup` is source-wide (v1)** | If `pre_backup` is set, **every** single-file backup for that `source_id` runs the dump step first—not only the nightly `.dump` path. |
+| **Different lifecycle** | DB dumps vs config/data often need different **`ttl_days`**, schedules, and failure handling. |
+| **`backup_key`** | `backup_key = source_id:relative_path`—split IDs keep version history and restore pins unambiguous. |
+
+| Source `id` (example) | `pre_backup` | Typical schedules |
+|-----------------------|--------------|-------------------|
+| `prod-vm-files` | *(omit)* | `config/app.yml`, `data/…`, Tier 1 path to customer cron dump |
+| `prod-vm-db` | `engine: postgres` or `command` | **Only** the dump artifact path (e.g. `cosmosbdr/nightly.dump`) |
+
+**Reuse connection settings** with YAML anchors (one host block, two sources):
+
+```yaml
+version: 1
+
+x-prod-vm-sftp: &prod_vm_sftp
+  type: sftp
+  host: env:PROD_VM_HOST
+  port: 22
+  user: env:PROD_VM_USER
+  remote_root: env:PROD_VM_REMOTE_ROOT
+  ssh:
+    secret_ref: PROD_VM_SSH_KEY
+    known_hosts_policy: pinned
+    host_key_fingerprint: env:PROD_VM_HOST_KEY_FINGERPRINT
+
+sources:
+  - id: prod-vm-files
+    <<: *prod_vm_sftp
+    retention:
+      ttl_days: 365
+    schedules:
+      - id: prod-vm-config-nightly
+        relative_path: config/app.yml
+        schedule: "0 1 * * *"
+        enabled: true
+
+  - id: prod-vm-db
+    <<: *prod_vm_sftp
+    retention:
+      ttl_days: 90
+    pre_backup:
+      engine: postgres
+      database_ref: PROD_PG_DATABASE
+      password_ref: PROD_PG_PASSWORD
+      output:
+        cleanup_after: true
+    schedules:
+      - id: prod-vm-pg-nightly
+        relative_path: cosmosbdr/nightly.dump
+        schedule: "0 2 * * *"
+        enabled: true
+```
+
+**`.env`:** one set of `PROD_VM_*` (and DB `*_REF`) vars can back both sources; Cadence schedule ids must stay **globally unique** across the file.
+
+**Do not** use directory backup on a source that has `pre_backup` (v1). **Defer** path-scoped `pre_backup` (single source, many paths) until product need is clear—two sources is the supported pattern today.
+
 #### Phase H implementation order (locked)
 
 1. Docs + reference dump scripts (**Tier 1**).
@@ -441,6 +504,7 @@ Shared `chunkcodec` for backup and restore.
 10. **Directory selection (Phase D):** modes **`all`** (default) and **`matched`**; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; **`max_depth`** optional, default unlimited
 11. **Schedules (Phase E):** nested under each source in **`sources.yaml`** only; global unique schedule `id`; Cadence cron per enabled row → `BackupWorkflow` or `DirectoryBackupWorkflow`
 12. **DB backups (Phase H):** restore = **dump file write-back** only; import into DB engines is out of scope v1. `pre_backup` commands are YAML-only (not API-driven).
+13. **Same SSH host, files + DB:** use **multiple `source_id`s** (e.g. `…-files` and `…-db`); YAML anchors for shared host/ssh; **`pre_backup` only on the DB source** (§2).
 
 ---
 
@@ -607,7 +671,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
 | Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
 | DB backup strategy | locked | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type |
-| Phase H | planned | `RunPreBackupActivity`, YAML `pre_backup`, `engine: postgres` preset |
+| Phase H | in progress | `pre_backup` on `sftp`, `RunPreBackupActivity`, `engine: postgres`, optional `command`/`env_refs`, `cleanup_after` |
 | Phase H.1 | planned | `max_dump_age` / freshness for dump paths |
 
 ---
@@ -620,6 +684,6 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | **Restore default** | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type. |
 | **WORM vs TTL** | **No WORM** for v1. **TTL per source** in `sources.yaml`. After TTL, delete **version metadata** and **physically remove** Seaweed objects / chunk rows that are **no longer referenced**. | Phase F implements refcount-safe GC; deduped chunks shared with newer backups are never deleted early. |
 | **YAML validation** | Schemas, struct mapping, and loader in **`src/config/`**. | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
-| **Database backups** | **Tier 1 (default):** host/cron produces dump → **`sftp`** backs up `relative_path`. **Tier 2 (optional):** `pre_backup` on same **`sftp`** source (generic `command` or `engine` preset). | No separate DB source types; chunk pipeline unchanged; restore = file only v1. |
+| **Database backups** | **Tier 1 (default):** host/cron produces dump → **`sftp`** backs up `relative_path`. **Tier 2 (optional):** `pre_backup` on a **dedicated** **`sftp`** source id (generic `command` or `engine` preset). **Same machine as file backups:** second source id without `pre_backup` (§2). | No separate DB source types; chunk pipeline unchanged; restore = file only v1. |
 
 _Add new rows here when scope changes._

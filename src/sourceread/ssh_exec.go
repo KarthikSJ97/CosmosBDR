@@ -1,0 +1,97 @@
+package sourceread
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"strings"
+
+	"cosmosbdr/src/config"
+
+	"golang.org/x/crypto/ssh"
+)
+
+// RunSSHCommand runs argv on the remote host (remote user's login shell interprets a single quoted command line).
+func RunSSHCommand(ctx context.Context, src config.ResolvedSource, argv []string, env map[string]string) error {
+	if len(argv) == 0 {
+		return fmt.Errorf("ssh exec: empty command")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	client, err := connectSSHOnly(src)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("ssh session: %w", err)
+	}
+	defer session.Close()
+
+	for k, v := range env {
+		_ = session.Setenv(k, v)
+	}
+
+	var stderr bytes.Buffer
+	session.Stderr = &stderr
+	cmd := strings.Join(shellQuoteArgs(argv), " ")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(cmd)
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGTERM)
+		return ctx.Err()
+	case err := <-done:
+		if err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if msg != "" {
+				return fmt.Errorf("ssh exec failed: %w: %s", err, msg)
+			}
+			return fmt.Errorf("ssh exec failed: %w", err)
+		}
+	}
+	return nil
+}
+
+func connectSSHOnly(src config.ResolvedSource) (*ssh.Client, error) {
+	cfg, err := sshClientConfig(src)
+	if err != nil {
+		return nil, err
+	}
+	addr := net.JoinHostPort(src.Host, fmt.Sprintf("%d", src.Port))
+	return dialSSH(addr, cfg, src)
+}
+
+func shellQuoteArgs(argv []string) []string {
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		out[i] = shellQuote(a)
+	}
+	return out
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if strings.IndexFunc(s, func(r rune) bool {
+		switch r {
+		case 'a', 'z', 'A', 'Z', '0', '9', '_', '-', '.', '/':
+			return false
+		default:
+			return true
+		}
+	}) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

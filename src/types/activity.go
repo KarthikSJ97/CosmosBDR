@@ -36,6 +36,27 @@ type UpdateJobStatusRequest struct {
 	Status string `json:"status"`
 }
 
+type RunPreBackupRequest struct {
+	SourceID      string `json:"source_id"`
+	RelativePath  string `json:"relative_path"`
+}
+
+type RunPreBackupResponse struct {
+	DumpRelativePath string `json:"dump_relative_path"`
+	RemotePath       string `json:"remote_path"`
+	CleanupAfter     bool   `json:"cleanup_after"`
+}
+
+type CleanupPreBackupRequest struct {
+	SourceID         string `json:"source_id"`
+	DumpRelativePath string `json:"dump_relative_path"`
+	CleanupAfter     bool   `json:"cleanup_after"`
+}
+
+type CleanupPreBackupResponse struct {
+	RemovedPath string `json:"removed_path,omitempty"`
+}
+
 type InspectFileRequest struct {
 	JobID     string `json:"job_id"`
 	ItemPath  string `json:"item_path"`

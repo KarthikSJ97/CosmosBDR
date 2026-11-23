@@ -19,6 +19,7 @@ type SourceDefinition struct {
 	Domain          string          `yaml:"domain,omitempty"`
 	RemoteRoot      string          `yaml:"remote_root,omitempty"`
 	SSH             *SSHConfig      `yaml:"ssh,omitempty"`
+	PreBackup       *PreBackupConfig `yaml:"pre_backup,omitempty"`
 	Retention       SourceRetention `yaml:"retention,omitempty"`
 	Schedules       []BackupSchedule `yaml:"schedules,omitempty"`
 }
@@ -65,5 +66,6 @@ type ResolvedSSH struct {
 // ResolvedSource is a validated source ready for runtime use.
 type ResolvedSource struct {
 	SourceDefinition
-	ResolvedSecret string
+	ResolvedSecret    string
+	ResolvedPreBackup *ResolvedPreBackup
 }

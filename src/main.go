@@ -123,6 +123,8 @@ func main() {
 		w.RegisterWorkflow(workflows.RetentionGCWorkflow)
 		w.RegisterActivity(jobActivities.InitJobActivity)
 		w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
+		w.RegisterActivity(jobActivities.RunPreBackupActivity)
+		w.RegisterActivity(jobActivities.CleanupPreBackupActivity)
 		w.RegisterActivity(jobActivities.InspectFileActivity)
 		w.RegisterActivity(jobActivities.ProcessFileChunkActivity)
 		w.RegisterActivity(jobActivities.CompleteJobItemActivity)
