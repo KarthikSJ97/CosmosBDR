@@ -112,11 +112,13 @@ type FailJobExecutionRequest struct {
 
 // RestoreChunkPlan describes one ordered segment needed to assemble the file on disk.
 type RestoreChunkPlan struct {
-	ChunkIndex  int    `json:"chunk_index"`
-	OffsetBytes int64  `json:"offset_bytes"`
-	LengthBytes int    `json:"length_bytes"`
-	ChunkHash   string `json:"chunk_hash"`
-	SeaweedKey  string `json:"seaweed_key"`
+	ChunkIndex     int    `json:"chunk_index"`
+	OffsetBytes    int64  `json:"offset_bytes"`
+	LengthBytes    int    `json:"length_bytes"`
+	ChunkHash      string `json:"chunk_hash"`
+	SeaweedKey     string `json:"seaweed_key"`
+	CompressionAlg string `json:"compression_alg"`
+	Encrypted      bool   `json:"encrypted"`
 }
 
 type ResolveRestoreSourceRequest struct {
@@ -156,8 +158,10 @@ type RestoreFileChunkRequest struct {
 	ChunkIndex      int    `json:"chunk_index"`
 	OffsetBytes     int64  `json:"offset_bytes"`
 	LengthBytes     int    `json:"length_bytes"`
-	ChunkHash       string `json:"chunk_hash"`
-	SeaweedKey      string `json:"seaweed_key"`
+	ChunkHash        string `json:"chunk_hash"`
+	SeaweedKey       string `json:"seaweed_key"`
+	CompressionAlg   string `json:"compression_alg"`
+	Encrypted        bool   `json:"encrypted"`
 }
 
 type RestoreFileChunkResponse struct {

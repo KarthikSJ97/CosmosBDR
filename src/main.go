@@ -9,6 +9,7 @@ import (
 	"cosmosbdr/src/cadence"
 	"cosmosbdr/src/cadence/activities"
 	"cosmosbdr/src/cadence/workflows"
+	"cosmosbdr/src/chunkcodec"
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db"
 	"cosmosbdr/src/handlers"
@@ -65,6 +66,16 @@ func main() {
 		serviceClient = nil
 	}
 
+	encKey, err := chunkcodec.ParseAES256Key(cfg.EncryptionKey)
+	if err != nil {
+		log.Fatalf("Invalid ENCRYPTION_KEY: %v", err)
+	}
+	chunkCodec, err := chunkcodec.New(encKey, cfg.CompressionAlgorithm)
+	if err != nil {
+		log.Fatalf("Invalid chunk codec config: %v", err)
+	}
+	log.Printf("Chunk pipeline: compression=%s, encryption=AES-256-GCM", chunkCodec.CompressionAlgorithm())
+
 	// 5. Initialize Repositories and Activities for the Worker
 	jobRepo := repositories.NewJobRepository(gormDB)
 	jobItemRepo := repositories.NewJobItemRepository(gormDB)
@@ -74,6 +85,7 @@ func main() {
 		JobItemRepo:                          jobItemRepo,
 		ChunkRepo:                            chunkRepo,
 		Seaweed:                              seaweedClient,
+		ChunkCodec:                           chunkCodec,
 		Registry:                             sourceRegistry,
 		CadenceMaxConcurrentWorkflows:        cfg.EffectiveCadenceMaxConcurrentWorkflows(),
 		CadenceWorkerMaxConcurrentActivities: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),

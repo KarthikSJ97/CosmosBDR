@@ -100,6 +100,8 @@ func runRestoreWorkflow(
 					LengthBytes:     chunk.LengthBytes,
 					ChunkHash:       chunk.ChunkHash,
 					SeaweedKey:      chunk.SeaweedKey,
+					CompressionAlg:  chunk.CompressionAlg,
+					Encrypted:       chunk.Encrypted,
 				}
 				futures = append(futures, workflow.ExecuteActivity(ctx, jobActivities.RestoreFileChunkActivity, chunkReq))
 			}

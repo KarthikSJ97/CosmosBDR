@@ -12,7 +12,7 @@ Living design doc for phased implementation. Reference this document when buildi
 - **Source data:** Host folder bind-mounted as `/host-data` via `HOST_DATA_PATH` in `docker-compose.yml` (backup *source*, not Seaweed).
 - **Pipeline:** Single file per job → `InspectFile` (size/mtime/hash, SKIP + chunk clone) → fixed 4 MB chunks → content-hash dedup → SeaweedFS (S3 API) → Postgres job/item/chunk metadata + snapshot manifest.
 - **Versions:** List/restore by logical path; optional `source_job_item_id` pins a version (default latest eligible).
-- **Encrypt/compress:** Config exists in `.env` (`ENCRYPTION_KEY`, `COMPRESSION_ALGORITHM`); chunk I/O not fully wired yet.
+- **Encrypt/compress:** `chunkcodec` — plaintext SHA-256 dedup, then gzip/zstd + AES-256-GCM per chunk; legacy plaintext Seaweed objects still restore (`encrypted=false`, `compression_alg=none`).
 
 ---
 
@@ -526,6 +526,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block |
 | Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
 | Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
+| Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
 
 ---
 

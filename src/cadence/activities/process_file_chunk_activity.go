@@ -41,12 +41,23 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 	}
 	seaweedKey := fmt.Sprintf("%s/chunks/%s", filePrefix, chunkHash)
 
+	if ja.ChunkCodec == nil {
+		return types.ProcessFileChunkResponse{}, fmt.Errorf("chunk codec is not configured")
+	}
+
+	storedBlob, err := ja.ChunkCodec.Encode(buffer)
+	if err != nil {
+		return types.ProcessFileChunkResponse{}, fmt.Errorf("compress/encrypt chunk: %w", err)
+	}
+
 	// Initialize the potential new global Chunk model structure
 	potentialChunk := &schema.Chunk{
 		ChunkHash:           chunkHash,
 		SeaweedKey:          seaweedKey,
 		SizeBytes:           int64(bytesRead),
-		CompressedSizeBytes: int64(bytesRead), // Update when adding compression middleware
+		CompressedSizeBytes: int64(len(storedBlob)),
+		CompressionAlg:      ja.ChunkCodec.CompressionAlgorithm(),
+		Encrypted:           true,
 	}
 
 	// 6. DB Deduplication Check: Check or insert the master global row atomically
@@ -64,7 +75,7 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 		_, err := ja.Seaweed.Client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(ja.Seaweed.Bucket),
 			Key:    aws.String(seaweedKey),
-			Body:   bytes.NewReader(buffer),
+			Body:   bytes.NewReader(storedBlob),
 		})
 		if err != nil {
 			return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to upload chunk to SeaweedFS: %w", err)

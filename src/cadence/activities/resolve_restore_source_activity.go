@@ -83,11 +83,13 @@ func (ja *JobActivities) ResolveRestoreSourceActivity(ctx context.Context, input
 	chunks := make([]types.RestoreChunkPlan, len(manifestRows))
 	for i, row := range manifestRows {
 		chunks[i] = types.RestoreChunkPlan{
-			ChunkIndex:  row.ChunkIndex,
-			OffsetBytes: row.OffsetBytes,
-			LengthBytes: row.LengthBytes,
-			ChunkHash:   row.ChunkHash,
-			SeaweedKey:  row.SeaweedKey,
+			ChunkIndex:     row.ChunkIndex,
+			OffsetBytes:    row.OffsetBytes,
+			LengthBytes:    row.LengthBytes,
+			ChunkHash:      row.ChunkHash,
+			SeaweedKey:     row.SeaweedKey,
+			CompressionAlg: row.CompressionAlg,
+			Encrypted:      row.Encrypted,
 		}
 	}
 

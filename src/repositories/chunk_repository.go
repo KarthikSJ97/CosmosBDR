@@ -66,11 +66,13 @@ func (r *ChunkRepository) CreateItemChunkMapping(ctx context.Context, mapping *s
 
 // ItemChunkWithStorage is the manifest row used when reassembling a file from SeaweedFS.
 type ItemChunkWithStorage struct {
-	ChunkIndex  int
-	OffsetBytes int64
-	LengthBytes int
-	ChunkHash   string
-	SeaweedKey  string
+	ChunkIndex     int
+	OffsetBytes    int64
+	LengthBytes    int
+	ChunkHash      string
+	SeaweedKey     string
+	CompressionAlg string
+	Encrypted      bool
 }
 
 // CountItemChunkReferences returns how many job items still reference a global chunk row.
@@ -128,7 +130,7 @@ func (r *ChunkRepository) ListItemChunksWithStorage(ctx context.Context, itemID 
 	var rows []ItemChunkWithStorage
 	err := r.DB.WithContext(ctx).
 		Table("item_chunks").
-		Select("item_chunks.chunk_index, item_chunks.offset_bytes, item_chunks.length_bytes, chunks.chunk_hash, chunks.seaweed_key").
+		Select("item_chunks.chunk_index, item_chunks.offset_bytes, item_chunks.length_bytes, chunks.chunk_hash, chunks.seaweed_key, chunks.compression_alg, chunks.encrypted").
 		Joins("JOIN chunks ON chunks.id = item_chunks.chunk_id").
 		Where("item_chunks.item_id = ?", itemID).
 		Order("item_chunks.chunk_index ASC").

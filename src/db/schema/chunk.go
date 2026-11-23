@@ -10,6 +10,8 @@ type Chunk struct {
 	SeaweedKey          string    `gorm:"type:text;not null"`
 	SizeBytes           int64     `gorm:"not null"`
 	CompressedSizeBytes int64     `gorm:"not null"`
+	CompressionAlg      string    `gorm:"type:varchar(16);not null;default:none"`
+	Encrypted           bool      `gorm:"not null;default:false"`
 	ReferenceCount      int       `gorm:"default:1"`
 	CreatedAt           time.Time `gorm:"autoCreateTime"`
 

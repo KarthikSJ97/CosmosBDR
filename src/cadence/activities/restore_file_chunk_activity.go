@@ -31,6 +31,9 @@ func (ja *JobActivities) RestoreFileChunkActivity(ctx context.Context, input typ
 	if ja.Seaweed == nil || ja.Seaweed.Client == nil {
 		return types.RestoreFileChunkResponse{}, fmt.Errorf("seaweed client is not initialized")
 	}
+	if ja.ChunkCodec == nil {
+		return types.RestoreFileChunkResponse{}, fmt.Errorf("chunk codec is not configured")
+	}
 
 	out, err := ja.Seaweed.Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(ja.Seaweed.Bucket),
@@ -41,14 +44,19 @@ func (ja *JobActivities) RestoreFileChunkActivity(ctx context.Context, input typ
 	}
 	defer out.Body.Close()
 
-	buffer, err := io.ReadAll(out.Body)
+	storedBlob, err := io.ReadAll(out.Body)
 	if err != nil {
 		return types.RestoreFileChunkResponse{}, fmt.Errorf("failed to read chunk body (index %d): %w", input.ChunkIndex, err)
 	}
 
+	buffer, err := ja.ChunkCodec.Decode(storedBlob, input.CompressionAlg, input.Encrypted)
+	if err != nil {
+		return types.RestoreFileChunkResponse{}, fmt.Errorf("decrypt/decompress chunk %d: %w", input.ChunkIndex, err)
+	}
+
 	if len(buffer) != input.LengthBytes {
 		return types.RestoreFileChunkResponse{}, fmt.Errorf(
-			"chunk %d size mismatch: expected %d bytes, got %d",
+			"chunk %d plaintext size mismatch: expected %d bytes, got %d",
 			input.ChunkIndex, input.LengthBytes, len(buffer),
 		)
 	}
