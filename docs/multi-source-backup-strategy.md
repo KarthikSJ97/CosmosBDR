@@ -2,7 +2,7 @@
 
 Living design doc for phased implementation. Reference this document when building any step/phase.
 
-**Last updated:** 2026-11-23 (Phase F: retention TTL + chunk GC)
+**Last updated:** 2026-11-23 (Phase H DB backup strategy locked; Phase G encrypt/compress done)
 
 ---
 
@@ -109,17 +109,91 @@ Manual HTTP triggers still use **`source_id` + `relative_path`** (or legacy `sou
 2. Stat remote path → same decision ladder as today.
 3. `ReadAt` per chunk activity instead of `os.Seek`/`Read`.
 
-### DB dumps
+### DB dumps (locked strategy)
 
-- **Dump already on remote** (e.g. cron writes `/backups/db.sql.gz`): use **`sftp`** only—no separate DB source type.
-- **CosmosBDR must create dump:** add **`db_dump`** (or pre-backup hook) that:
-  1. SSH exec runs configured command (`pg_dump`, etc.; DB creds from env).
-  2. Output to remote temp or worker staging.
-  3. Same inspect/chunk/upload pipeline; logical name e.g. `postgres/prod-2026-11-20.dump`.
+CosmosBDR protects **files** in Seaweed (chunked, encrypted). Database DR is: **produce a dump file → back it up like any other file**. Restore v1 is **write the dump file back to disk** (local or SFTP)—not import into PostgreSQL/MySQL/etc. (`psql` / `pg_restore` over SSH is a later, explicit feature).
 
-Use **`db_dump` source** when you need engine-specific flags, DB credentials separate from SSH, consistency (`pg_dump --snapshot`), or streaming. Otherwise “dump is a file” keeps the model simple.
+Most engines ship **dump tools**, not **scheduled dumps**. Production teams use **cron**, SQL Server Agent, Ansible, or **cloud snapshot/PITR** (RDS, Cloud SQL). Cosmos fits **self-managed VMs** and **logical exports to a path**; it does **not** replace managed-cloud control-plane backups.
 
-**Restore v1:** restore **file to disk** (local or SFTP). DB **import** (`psql`/`pg_restore` over SSH) is a later, explicit feature.
+#### Tier 1 — **Default (no Phase H code; works today)**
+
+| Who | What |
+|-----|------|
+| **Customer** | Scheduled dump on the DB host (`pg_dump`, `mysqldump`, custom script, SQL Agent) → stable path under `remote_root` (e.g. `backups/postgres/latest.dump`, often a `latest` symlink). |
+| **CosmosBDR** | **`type: sftp`** + schedule or API on `relative_path` → `InspectFile` → chunks → Seaweed. |
+
+**Operational rule:** run dump **before** Cosmos schedule (e.g. dump 01:00, backup 02:00). Ship **reference scripts** in-repo (`scripts/dump/*`) as copy/install helpers—Cosmos does not execute them in Tier 1.
+
+**Risk — stale file + SKIP:** if tonight’s dump fails and the file is unchanged, `InspectFile` may **SKIP** on mtime/hash and yesterday’s version remains “current”. Mitigation (Phase H.1 / small follow-up): optional **`pre_backup.max_dump_age`** or **require mtime after job start** for paths tagged as dump artifacts.
+
+#### Tier 2 — **Phase H: optional `pre_backup` on `sftp` sources**
+
+When a team wants **one control plane** (only `sources.yaml`) or **fail-closed** “no dump ⇒ no backup”, add an optional **`pre_backup`** block on an existing **`sftp`** source—**not** a separate `postgres` / `mysql` source `type`.
+
+```yaml
+sources:
+  - id: prod-db-vm
+    type: sftp
+    host: db.internal
+    remote_root: /var/backups
+    ssh: { secret_ref: ..., host_key_fingerprint: "SHA256:..." }
+    pre_backup:
+      # Preset — Cosmos expands to engine dump + env refs (v1: postgres first)
+      engine: postgres
+      database_ref: PROD_PG_DATABASE
+      password_ref: PROD_PG_PASSWORD
+      output:
+        relative_path: cosmosbdr/nightly.dump   # under remote_root; same path backup reads
+        cleanup_after: true                     # optional remote delete after successful upload
+      # Alternative — long tail / RMAN / bespoke tools
+      # command: ["/opt/cosmosbdr/dump.sh"]
+      # env_refs:
+      #   FOO: PROD_FOO
+    schedules:
+      - id: pg-nightly
+        relative_path: cosmosbdr/nightly.dump
+        schedule: "0 2 * * *"
+        enabled: true
+```
+
+| Mechanism | Role |
+|-----------|------|
+| **`pre_backup.command` + `env_refs`** | Generic SSH exec (allowlisted argv from YAML only—never from HTTP API). |
+| **`pre_backup.engine`** | Preset sugar (`postgres`, later `mysql`, …)—same workflow, config expansion only. |
+| **Output path** | Dump must land under **`remote_root` + `relative_path`** (or explicit `output.relative_path`) so the existing **`SFTPReader`** path is unchanged. |
+
+**Workflow (Phase H):**
+
+```text
+BackupWorkflow
+  → Init → [optional] RunPreBackupActivity (SSH exec)
+  → InspectFile → chunk fan-out → manifest → finalize
+  → [optional] cleanup remote staging
+```
+
+**v1 staging default:** remote file on the SSH host, then **SFTP ranged reads** (no worker streaming / `StagedFileReader` unless a later phase requires it).
+
+**Security:** commands and secret refs come **only** from `sources.yaml`; DB creds resolve from `.env` like SSH keys.
+
+#### When to use which tier
+
+| Situation | Use |
+|-----------|-----|
+| Dump already exists on a schedule | **Tier 1** — `sftp` only |
+| Separate team owns DB; Cosmos only off-sites files | **Tier 1** |
+| Single Cadence schedule; backup must fail if dump fails | **Tier 2** — `pre_backup` |
+| Non-standard engine (Oracle RMAN, etc.) | **Tier 2** — `pre_backup.command` or customer script in **Tier 1** |
+| RDS / Cloud SQL as primary DR | Vendor snapshot/PITR; Cosmos for **exports** or files on a bastion |
+
+#### Phase H implementation order (locked)
+
+1. Docs + reference dump scripts (**Tier 1**).
+2. `RunPreBackupActivity`: SSH exec + `command` / `env_refs`.
+3. **`engine: postgres`** preset + YAML validation.
+4. Optional **`max_dump_age`** / freshness for dump `relative_path`s (valuable for Tier 1 too).
+5. Additional engine presets only when a real deployment needs them.
+
+**Defer:** separate `db_dump` source `type`; per-DB source types in `SourceRegistry`; worker-local streaming staging; restore-into-DB orchestration.
 
 ---
 
@@ -152,7 +226,7 @@ SourceReader:
 |----------------|------|
 | `LocalReader` | Current `os` under `/host-data` |
 | `SFTPReader` | Remote ranged reads |
-| `StagedFileReader` | After DB dump or SCP fallback |
+| `StagedFileReader` | *(deferred)* SCP fallback or worker-side staging—Tier 2 default uses remote path + `SFTPReader` |
 
 ### Activities (conceptual)
 
@@ -162,6 +236,7 @@ SourceReader:
 | `InspectFileActivity` | Reader instead of `os` |
 | `ProcessFileChunkActivity` | `ReadAt` |
 | `ListDirectoryActivity` | Directory policies |
+| `RunPreBackupActivity` (Phase H) | Optional SSH exec before inspect (`pre_backup` on `sftp`) |
 | `RestoreTargetActivity` (later) | Local or SFTP write |
 
 Remote workloads: longer activity timeouts, tuned parallel chunk count.
@@ -172,7 +247,7 @@ Remote workloads: longer activity timeouts, tuned parallel chunk count.
 
 ### Single file
 
-Unchanged graph: Init → Inspect → chunk fan-out → manifest → finalize. Request carries `source_id` + path.
+Graph: Init → **[optional] RunPreBackup** (Phase H, `pre_backup` on source) → Inspect → chunk fan-out → manifest → finalize. Request carries `source_id` + path. Without `pre_backup`, identical to today.
 
 ### Directory backup
 
@@ -347,7 +422,8 @@ Shared `chunkcodec` for backup and restore.
 | **E** | Cadence cron registration at startup from `sources.yaml` `schedules` (per source); stable workflow id per schedule `id` |
 | **F** | Retention + chunk GC workflow |
 | **G** | Encrypt/compress in chunk pipeline + restore |
-| **H** | `db_dump` pre-step (SSH exec + stage) |
+| **H** | Optional `pre_backup` on **`sftp`** (SSH exec + presets); Tier 1 dump-via-cron unchanged |
+| **H.1** | Dump freshness / `max_dump_age` (Tier 1 + Tier 2 safety) |
 
 ---
 
@@ -355,7 +431,7 @@ Shared `chunkcodec` for backup and restore.
 
 1. `backup_key = source_id:relative_path`
 2. SFTP primary; SCP staging fallback only
-3. DB: file backup when dump exists; `db_dump` when dump must be created
+3. **DB (locked):** default **Tier 1** — customer dump on host + **`sftp`** file backup; optional **Tier 2** — `pre_backup` on **`sftp`** (generic `command` + `engine` presets). No per-engine source `types`.
 4. Cadence cron for backup; restore API-only
 5. Plaintext-hash dedup, encrypted blobs in Seaweed
 6. **Backup durability:** always Seaweed on CosmosBDR host (bind mount); remotes are ingest sources only
@@ -364,6 +440,7 @@ Shared `chunkcodec` for backup and restore.
 9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 10. **Directory selection (Phase D):** modes **`all`** (default) and **`matched`**; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; **`max_depth`** optional, default unlimited
 11. **Schedules (Phase E):** nested under each source in **`sources.yaml`** only; global unique schedule `id`; Cadence cron per enabled row → `BackupWorkflow` or `DirectoryBackupWorkflow`
+12. **DB backups (Phase H):** restore = **dump file write-back** only; import into DB engines is out of scope v1. `pre_backup` commands are YAML-only (not API-driven).
 
 ---
 
@@ -389,7 +466,8 @@ flowchart LR
 
   Registry --> Resolve[ResolveSourceActivity]
   Resolve --> Reader[SourceReader local / sftp / staged]
-  BkWF --> Inspect[InspectFileActivity]
+  BkWF --> PreBk[RunPreBackupActivity optional]
+  PreBk --> Inspect[InspectFileActivity]
   Inspect --> Reader
   BkWF --> Chunk[ProcessFileChunkActivity]
   Chunk --> Reader
@@ -510,7 +588,8 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | E | Cadence cron from `sources.yaml` schedules | §10 |
 | F | Retention + chunk GC | §10 |
 | G | Encrypt/compress pipeline | §10 |
-| H | `db_dump` pre-step | §10 |
+| H | `pre_backup` on `sftp` + postgres preset | §2, §10 |
+| H.1 | Dump freshness / `max_dump_age` | §2 |
 
 ### Status log (fill in as you go)
 
@@ -527,6 +606,9 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
 | Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
 | Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
+| DB backup strategy | locked | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type |
+| Phase H | planned | `RunPreBackupActivity`, YAML `pre_backup`, `engine: postgres` preset |
+| Phase H.1 | planned | `max_dump_age` / freshness for dump paths |
 
 ---
 
@@ -538,5 +620,6 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | **Restore default** | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type. |
 | **WORM vs TTL** | **No WORM** for v1. **TTL per source** in `sources.yaml`. After TTL, delete **version metadata** and **physically remove** Seaweed objects / chunk rows that are **no longer referenced**. | Phase F implements refcount-safe GC; deduped chunks shared with newer backups are never deleted early. |
 | **YAML validation** | Schemas, struct mapping, and loader in **`src/config/`**. | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
+| **Database backups** | **Tier 1 (default):** host/cron produces dump → **`sftp`** backs up `relative_path`. **Tier 2 (optional):** `pre_backup` on same **`sftp`** source (generic `command` or `engine` preset). | No separate DB source types; chunk pipeline unchanged; restore = file only v1. |
 
-_No remaining open items in this list; add new rows here when scope changes._
+_Add new rows here when scope changes._
