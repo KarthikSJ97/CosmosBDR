@@ -87,6 +87,45 @@ func TestRestoreDestinationForBackupKey_SFTP(t *testing.T) {
 	}
 }
 
+func TestListRetentionGCSources_SkipsUnconfigured(t *testing.T) {
+	reg := &SourceRegistry{
+		Sources: map[string]ResolvedSource{
+			"no-retention": {
+				SourceDefinition: SourceDefinition{ID: "no-retention", Type: "local", ContainerMount: "/data"},
+			},
+			"with-retention": {
+				SourceDefinition: SourceDefinition{
+					ID:             "with-retention",
+					Type:           "local",
+					ContainerMount: "/data",
+					Retention:      SourceRetention{TTLDays: 14},
+				},
+			},
+			"zero-ttl": {
+				SourceDefinition: SourceDefinition{
+					ID:             "zero-ttl",
+					Type:           "local",
+					ContainerMount: "/data",
+					Retention:      SourceRetention{TTLDays: 0},
+				},
+			},
+		},
+	}
+	got := reg.ListRetentionGCSources()
+	if len(got) != 1 || got[0].SourceID != "with-retention" || got[0].TTLDays != 14 {
+		t.Fatalf("retention GC sources: %+v", got)
+	}
+}
+
+func TestSourceRetention_GCEnabled(t *testing.T) {
+	if (SourceRetention{}).GCEnabled() {
+		t.Fatal("empty retention should disable GC")
+	}
+	if !(SourceRetention{TTLDays: 1}).GCEnabled() {
+		t.Fatal("ttl_days > 0 should enable GC")
+	}
+}
+
 func TestLocalRestorePathForBackupKey_StagingOverride(t *testing.T) {
 	reg := &SourceRegistry{
 		Sources: map[string]ResolvedSource{

@@ -73,6 +73,57 @@ type ItemChunkWithStorage struct {
 	SeaweedKey  string
 }
 
+// CountItemChunkReferences returns how many job items still reference a global chunk row.
+func (r *ChunkRepository) CountItemChunkReferences(ctx context.Context, chunkID string) (int64, error) {
+	var count int64
+	err := r.DB.WithContext(ctx).Model(&schema.ItemChunk{}).Where("chunk_id = ?", chunkID).Count(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("count item_chunks for chunk %s: %w", chunkID, err)
+	}
+	return count, nil
+}
+
+// GetChunkByID loads a chunk row by primary key.
+func (r *ChunkRepository) GetChunkByID(ctx context.Context, chunkID string) (*schema.Chunk, error) {
+	var chunk schema.Chunk
+	err := r.DB.WithContext(ctx).First(&chunk, "id = ?", chunkID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load chunk %s: %w", chunkID, err)
+	}
+	return &chunk, nil
+}
+
+// DeleteChunkRow hard-deletes a chunks row (caller must ensure no item_chunks reference it).
+func (r *ChunkRepository) DeleteChunkRow(ctx context.Context, chunkID string) error {
+	res := r.DB.WithContext(ctx).Delete(&schema.Chunk{}, "id = ?", chunkID)
+	if res.Error != nil {
+		return fmt.Errorf("delete chunk row %s: %w", chunkID, res.Error)
+	}
+	return nil
+}
+
+// ListUnreferencedChunks returns global chunk rows with zero item_chunk links (batch).
+func (r *ChunkRepository) ListUnreferencedChunks(ctx context.Context, limit int) ([]schema.Chunk, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+	var chunks []schema.Chunk
+	err := r.DB.WithContext(ctx).
+		Table("chunks").
+		Select("chunks.*").
+		Joins(`LEFT JOIN item_chunks ON item_chunks.chunk_id = chunks.id`).
+		Where("item_chunks.chunk_id IS NULL").
+		Limit(limit).
+		Find(&chunks).Error
+	if err != nil {
+		return nil, fmt.Errorf("list unreferenced chunks: %w", err)
+	}
+	return chunks, nil
+}
+
 func (r *ChunkRepository) ListItemChunksWithStorage(ctx context.Context, itemID string) ([]ItemChunkWithStorage, error) {
 	var rows []ItemChunkWithStorage
 	err := r.DB.WithContext(ctx).

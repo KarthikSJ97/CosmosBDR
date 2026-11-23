@@ -2,7 +2,7 @@
 
 Living design doc for phased implementation. Reference this document when building any step/phase.
 
-**Last updated:** 2026-11-22 (Phase E: backup schedules nested under `sources.yaml`)
+**Last updated:** 2026-11-23 (Phase F: retention TTL + chunk GC)
 
 ---
 
@@ -277,7 +277,7 @@ Two lifecycles:
 
 **TTL (locked decision):**
 
-- **`ttl_days` (or equivalent) is set on each entry in `sources.yaml`** (source-level default for all `backup_key`s under that source).
+- **`ttl_days` is set on each entry in `sources.yaml`** (source-level default for all `backup_key`s under that source). **Omitted `retention` or `ttl_days: 0` disables expiry GC for that source** (orphan chunk sweep still runs globally).
 - When a backup version’s age **exceeds the source TTL**, expire that version’s **metadata** (job_items, manifests, item_chunk links for that version only).
 
 **Physical delete (not WORM):**
@@ -525,6 +525,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
 | Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block |
 | Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
+| Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
 
 ---
 

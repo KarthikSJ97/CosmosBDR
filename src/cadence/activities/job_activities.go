@@ -13,6 +13,9 @@ type JobActivities struct {
 	Seaweed     *storage.SeaweedClient
 	Registry    *config.SourceRegistry
 
-	CadenceMaxConcurrentWorkflows       int
+	CadenceMaxConcurrentWorkflows        int
 	CadenceWorkerMaxConcurrentActivities int
+
+	RetentionGCItemBatchSize   int
+	RetentionGCOrphanBatchSize int
 }

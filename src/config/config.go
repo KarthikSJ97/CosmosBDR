@@ -43,6 +43,13 @@ type Config struct {
 
 	CadenceMaxConcurrentWorkflows        int // directory parent: child workflow batch size
 	CadenceWorkerMaxConcurrentActivities int // global cap: worker + in-workflow activity waves
+
+	// Retention GC (Phase F worker / Cadence cron)
+	RetentionGCWorkflowID            string
+	RetentionGCCronSchedule          string
+	RetentionGCItemBatchSize         int
+	RetentionGCOrphanBatchSize       int
+	RetentionGCExecutionTimeoutHours int
 }
 
 func LoadConfig() *Config {
@@ -83,6 +90,12 @@ func LoadConfig() *Config {
 
 		CadenceMaxConcurrentWorkflows:        getEnvInt("CADENCE_MAX_CONCURRENT_WORKFLOWS", DefaultCadenceMaxConcurrentWorkflows),
 		CadenceWorkerMaxConcurrentActivities: getEnvInt("CADENCE_WORKER_MAX_CONCURRENT_ACTIVITIES", DefaultCadenceWorkerMaxConcurrentActivities),
+
+		RetentionGCWorkflowID:            getEnvString("RETENTION_GC_WORKFLOW_ID", DefaultRetentionGCWorkflowID),
+		RetentionGCCronSchedule:          getEnvString("RETENTION_GC_CRON_SCHEDULE", DefaultRetentionGCCronSchedule),
+		RetentionGCItemBatchSize:         getEnvInt("RETENTION_GC_ITEM_BATCH_SIZE", DefaultRetentionGCItemBatchSize),
+		RetentionGCOrphanBatchSize:       getEnvInt("RETENTION_GC_ORPHAN_BATCH_SIZE", DefaultRetentionGCOrphanBatchSize),
+		RetentionGCExecutionTimeoutHours: getEnvInt("RETENTION_GC_EXECUTION_TIMEOUT_HOURS", DefaultRetentionGCExecutionTimeout),
 	}
 }
 

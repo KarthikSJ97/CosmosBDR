@@ -130,6 +130,27 @@ func (r *SourceRegistry) ListEnabledBackupSchedules() []ResolvedBackupSchedule {
 	return out
 }
 
+// RetentionGCSource is one source that participates in TTL expiry (retention.ttl_days > 0).
+type RetentionGCSource struct {
+	SourceID string
+	TTLDays  int
+}
+
+// ListRetentionGCSources returns sources with retention GC enabled (configured ttl_days > 0).
+func (r *SourceRegistry) ListRetentionGCSources() []RetentionGCSource {
+	out := make([]RetentionGCSource, 0)
+	for _, src := range r.ListSources() {
+		if !src.Retention.GCEnabled() {
+			continue
+		}
+		out = append(out, RetentionGCSource{
+			SourceID: src.ID,
+			TTLDays:  src.Retention.TTLDays,
+		})
+	}
+	return out
+}
+
 // ListSources returns sources in stable ID order.
 func (r *SourceRegistry) ListSources() []ResolvedSource {
 	ids := make([]string, 0, len(r.Sources))

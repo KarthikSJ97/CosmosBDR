@@ -70,13 +70,15 @@ func main() {
 	jobItemRepo := repositories.NewJobItemRepository(gormDB)
 	chunkRepo := repositories.NewChunkRepository(gormDB)
 	jobActivities := &activities.JobActivities{
-		JobRepo:                        jobRepo,
-		JobItemRepo:                    jobItemRepo,
-		ChunkRepo:                      chunkRepo,
-		Seaweed:                        seaweedClient,
-		Registry:                       sourceRegistry,
-		CadenceMaxConcurrentWorkflows:       cfg.EffectiveCadenceMaxConcurrentWorkflows(),
+		JobRepo:                              jobRepo,
+		JobItemRepo:                          jobItemRepo,
+		ChunkRepo:                            chunkRepo,
+		Seaweed:                              seaweedClient,
+		Registry:                             sourceRegistry,
+		CadenceMaxConcurrentWorkflows:        cfg.EffectiveCadenceMaxConcurrentWorkflows(),
 		CadenceWorkerMaxConcurrentActivities: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),
+		RetentionGCItemBatchSize:             cfg.EffectiveRetentionGCItemBatchSize(),
+		RetentionGCOrphanBatchSize:           cfg.EffectiveRetentionGCOrphanBatchSize(),
 	}
 
 	// 6. Start Cadence Worker in a background goroutine using NewV2
@@ -106,6 +108,7 @@ func main() {
 		w.RegisterWorkflow(workflows.BackupWorkflow)
 		w.RegisterWorkflow(workflows.DirectoryBackupWorkflow)
 		w.RegisterWorkflow(workflows.RestoreWorkflow)
+		w.RegisterWorkflow(workflows.RetentionGCWorkflow)
 		w.RegisterActivity(jobActivities.InitJobActivity)
 		w.RegisterActivity(jobActivities.UpdateJobStatusActivity)
 		w.RegisterActivity(jobActivities.InspectFileActivity)
@@ -120,6 +123,7 @@ func main() {
 		w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)
 		w.RegisterActivity(jobActivities.PrepareRestoreTargetActivity)
 		w.RegisterActivity(jobActivities.RestoreFileChunkActivity)
+		w.RegisterActivity(jobActivities.RetentionGCActivity)
 
 		go func() {
 			log.Println("Starting Cadence Worker...")
@@ -130,6 +134,9 @@ func main() {
 
 		if err := handlers.RegisterBackupSchedules(context.Background(), cadenceClient, sourceRegistry); err != nil {
 			log.Fatalf("Failed to register backup schedules: %v", err)
+		}
+		if err := handlers.RegisterRetentionGCCron(context.Background(), cadenceClient, cfg); err != nil {
+			log.Fatalf("Failed to register retention GC cron: %v", err)
 		}
 	}
 

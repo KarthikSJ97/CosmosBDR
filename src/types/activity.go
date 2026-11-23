@@ -164,3 +164,16 @@ type RestoreFileChunkResponse struct {
 	ChunkIndex   int `json:"chunk_index"`
 	BytesWritten int `json:"bytes_written"`
 }
+
+// RetentionGCRequest drives one retention pass (AsOf is wall clock for TTL; zero means time.Now()).
+type RetentionGCRequest struct {
+	AsOf time.Time `json:"as_of,omitempty"`
+}
+
+// RetentionGCResponse summarizes one retention GC activity run.
+type RetentionGCResponse struct {
+	ExpiredItemsDeleted  int `json:"expired_items_deleted"`
+	ManifestsDeleted     int `json:"manifests_deleted"`
+	ChunksDeleted        int `json:"chunks_deleted"`
+	OrphanChunksDeleted  int `json:"orphan_chunks_deleted"`
+}

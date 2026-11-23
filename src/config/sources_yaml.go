@@ -51,6 +51,12 @@ type SourceRetention struct {
 	TTLDays int `yaml:"ttl_days"`
 }
 
+// GCEnabled reports whether retention GC should run for this source (ttl_days > 0).
+// Omitted retention or ttl_days: 0 disables expiry for that source.
+func (r SourceRetention) GCEnabled() bool {
+	return r.TTLDays > 0
+}
+
 // ResolvedSSH holds secret material resolved from the environment (never serialized).
 type ResolvedSSH struct {
 	PrivateKeyPEM string

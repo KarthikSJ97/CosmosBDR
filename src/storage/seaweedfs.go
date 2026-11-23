@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -93,6 +94,36 @@ func isBucketMissing(err error) bool {
 	if errors.As(err, &apiErr) {
 		switch apiErr.ErrorCode() {
 		case "NotFound", "NoSuchBucket":
+			return true
+		}
+	}
+	return false
+}
+
+// DeleteObject removes one object from the configured bucket. Missing keys are treated as success.
+func (c *SeaweedClient) DeleteObject(ctx context.Context, objectKey string) error {
+	if c == nil || c.Client == nil {
+		return fmt.Errorf("seaweed client is not initialized")
+	}
+	objectKey = strings.TrimSpace(objectKey)
+	if objectKey == "" {
+		return nil
+	}
+	_, err := c.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(c.Bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil && !isObjectMissing(err) {
+		return fmt.Errorf("delete SeaweedFS object %q: %w", objectKey, err)
+	}
+	return nil
+}
+
+func isObjectMissing(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFound", "NoSuchKey":
 			return true
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/types"
@@ -223,6 +224,50 @@ func (r *JobItemRepository) FailIncompleteJobItems(ctx context.Context, jobID, i
 	})
 	if result.Error != nil {
 		return result.Error
+	}
+	return nil
+}
+
+// ListExpiredSnapshotItems returns COMPLETED/SKIPPED snapshots older than expireBefore for one source (backup_key prefix).
+func (r *JobItemRepository) ListExpiredSnapshotItems(ctx context.Context, sourceID string, expireBefore time.Time, limit int) ([]schema.JobItem, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	prefix := sourceID + ":%"
+	var items []schema.JobItem
+	err := r.backupSnapshotQuery(ctx).
+		Where("job_items.backup_key LIKE ?", prefix).
+		Where("job_items.created_at < ?", expireBefore).
+		Order("job_items.created_at ASC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list expired snapshots for source %q: %w", sourceID, err)
+	}
+	return items, nil
+}
+
+// ChunkIDsForItem returns distinct global chunk IDs linked to a job item (before hard delete).
+func (r *JobItemRepository) ChunkIDsForItem(ctx context.Context, itemID string) ([]string, error) {
+	var ids []string
+	err := r.DB.WithContext(ctx).Model(&schema.ItemChunk{}).
+		Distinct("chunk_id").
+		Where("item_id = ?", itemID).
+		Pluck("chunk_id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("list chunk ids for item %s: %w", itemID, err)
+	}
+	return ids, nil
+}
+
+// HardDeleteJobItem permanently removes a job_items row (item_chunks cascade).
+func (r *JobItemRepository) HardDeleteJobItem(ctx context.Context, itemID string) error {
+	res := r.DB.WithContext(ctx).Delete(&schema.JobItem{}, "id = ?", itemID)
+	if res.Error != nil {
+		return fmt.Errorf("hard delete job item %s: %w", itemID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("job item not found: %s", itemID)
 	}
 	return nil
 }
