@@ -2,6 +2,7 @@ package activities
 
 import (
 	"context"
+	"cosmosbdr/src/config"
 	"cosmosbdr/src/types"
 	"encoding/json"
 	"fmt"
@@ -33,6 +34,17 @@ func (ja *JobActivities) InspectFileActivity(ctx context.Context, input types.In
 
 	currentSize := stat.Size
 	currentModTime := stat.ModTime.UTC().Truncate(time.Second)
+
+	if ja.Registry != nil && input.SourceID != "" {
+		if src, ok := ja.Registry.GetSource(input.SourceID); ok {
+			rel := config.RelativePathForInspect(input.SourceID, input.BackupKey, input.ItemPath, ja.Registry)
+			if maxAge, match := src.DumpFreshnessMaxAge(rel); match {
+				if err := config.CheckDumpArtifactFreshness(maxAge, currentModTime, rel); err != nil {
+					return types.InspectFileResponse{}, err
+				}
+			}
+		}
+	}
 
 	// 2. Fetch latest historical backup record
 	var historicalItem *schema.JobItem

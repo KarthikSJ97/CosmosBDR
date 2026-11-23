@@ -124,7 +124,14 @@ Most engines ship **dump tools**, not **scheduled dumps**. Production teams use 
 
 **Operational rule:** run dump **before** Cosmos schedule (e.g. dump 01:00, backup 02:00). Ship **reference scripts** in-repo (`scripts/dump/*`) as copy/install helpers—Cosmos does not execute them in Tier 1.
 
-**Risk — stale file + SKIP:** if tonight’s dump fails and the file is unchanged, `InspectFile` may **SKIP** on mtime/hash and yesterday’s version remains “current”. Mitigation (Phase H.1 / small follow-up): optional **`pre_backup.max_dump_age`** or **require mtime after job start** for paths tagged as dump artifacts.
+**Risk — stale file + SKIP:** if tonight’s dump fails and the file is unchanged, `InspectFile` may **SKIP** on mtime/hash. Mitigation (**Phase H.1**): optional source-level **`dump_freshness`** — list `relative_paths` + `max_age_hours`; inspect **fails** when mtime is older than the window (no silent SKIP).
+
+```yaml
+dump_freshness:
+  max_age_hours: 26
+  relative_paths:
+    - cosmosbdr/nightly.dump
+```
 
 #### Tier 2 — **Phase H: optional `pre_backup` on `sftp` sources**
 
@@ -672,7 +679,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
 | DB backup strategy | locked | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type |
 | Phase H | in progress | `pre_backup` on `sftp`, `RunPreBackupActivity`, `engine: postgres`, optional `command`/`env_refs`, `cleanup_after` |
-| Phase H.1 | planned | `max_dump_age` / freshness for dump paths |
+| Phase H.1 | done | `dump_freshness` in sources.yaml → fail inspect when mtime too old |
 
 ---
 

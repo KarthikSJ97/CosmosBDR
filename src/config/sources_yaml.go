@@ -19,8 +19,9 @@ type SourceDefinition struct {
 	Domain          string          `yaml:"domain,omitempty"`
 	RemoteRoot      string          `yaml:"remote_root,omitempty"`
 	SSH             *SSHConfig      `yaml:"ssh,omitempty"`
-	PreBackup       *PreBackupConfig `yaml:"pre_backup,omitempty"`
-	Retention       SourceRetention `yaml:"retention,omitempty"`
+	PreBackup       *PreBackupConfig  `yaml:"pre_backup,omitempty"`
+	DumpFreshness   *DumpFreshnessConfig `yaml:"dump_freshness,omitempty"`
+	Retention       SourceRetention   `yaml:"retention,omitempty"`
 	Schedules       []BackupSchedule `yaml:"schedules,omitempty"`
 }
 

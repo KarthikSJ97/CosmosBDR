@@ -43,6 +43,9 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 		if err := validatePreBackup(prefix, &src); err != nil {
 			return nil, err
 		}
+		if err := validateDumpFreshness(prefix, &src); err != nil {
+			return nil, err
+		}
 		prefix = fmt.Sprintf("sources[%d] (%s)", i, src.ID)
 		if err := validateBackupSchedules(prefix, src.ID, src.Schedules, seenScheduleIDs); err != nil {
 			return nil, err
