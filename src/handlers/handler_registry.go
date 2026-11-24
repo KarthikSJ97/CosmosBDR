@@ -32,4 +32,10 @@ func HandlerRegistry(app *fiber.App, cadenceClient cadenceClient.Client, jobItem
 
 	restoreHandler := NewRestoreHandler(cadenceClient, reg)
 	v1.Post("/restores", restoreHandler.TriggerRestore)
+
+	scheduleHandler := NewScheduleHandler(cadenceClient, reg)
+	v1.Get("/schedules", scheduleHandler.ListSchedules)
+	v1.Post("/schedules/reconcile", scheduleHandler.ReconcileSchedules)
+	v1.Post("/schedules/:id/register", scheduleHandler.RegisterSchedule)
+	v1.Post("/schedules/:id/deregister", scheduleHandler.DeregisterSchedule)
 }

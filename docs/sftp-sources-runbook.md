@@ -181,6 +181,26 @@ No Mac `ssh -L`, no extra env vars beyond the source block.
 
 ---
 
+## Backup schedules (crons)
+
+Schedules are defined under each source in `sources.yaml`. **`enabled`** is the default for new deploys and **`POST /schedules/reconcile`** — for pause/resume without editing YAML, use the API.
+
+| Action | API |
+|--------|-----|
+| List schedules + Cadence state | `GET /api/v1/schedules` |
+| Start cron (runtime) | `POST /api/v1/schedules/{id}/register` |
+| Stop cron (runtime) | `POST /api/v1/schedules/{id}/deregister` |
+| Apply YAML `enabled` + cron after editing file | Rebuild/restart app, or `POST /api/v1/schedules/reconcile` with in-memory config (restart still needed today to reload `sources.yaml`) |
+
+```bash
+curl -sS http://localhost:8080/api/v1/schedules
+curl -sS -X POST "http://localhost:8080/api/v1/schedules/ovhcloud-pg-manual-test/register"
+curl -sS -X POST "http://localhost:8080/api/v1/schedules/ovhcloud-pg-manual-test/deregister"
+curl -sS -X POST http://localhost:8080/api/v1/schedules/reconcile
+```
+
+---
+
 ## Cheat sheet
 
 | Step | When |
@@ -191,6 +211,7 @@ No Mac `ssh -L`, no extra env vars beyond the source block.
 | `docker compose up -d --build` | **Per change** |
 | Container `nc <WIN_HOST> 22` | When connectivity is unclear |
 | `POST /backups` / `POST /restores` | **Each operation** |
+| `POST /schedules/.../register` or `deregister` | Pause/resume crons without stack recycle |
 
 ---
 

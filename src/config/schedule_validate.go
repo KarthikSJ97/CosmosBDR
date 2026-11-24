@@ -14,6 +14,11 @@ func scheduleEnabled(s BackupSchedule) bool {
 	return *s.Enabled
 }
 
+// YAMLEnabled reports the enabled flag from sources.yaml (default true when omitted).
+func YAMLEnabled(s BackupSchedule) bool {
+	return scheduleEnabled(s)
+}
+
 func validateCronSchedule(schedule string) error {
 	schedule = strings.TrimSpace(schedule)
 	if schedule == "" {

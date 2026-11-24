@@ -405,10 +405,12 @@ Fixed order; predictable, same as common backup tools:
 }
 ```
 
-### Schedule vs restore (Phase E — implemented)
+### Schedule vs restore (Phase E — implemented; E.1 schedule API)
 
-- **Backup schedules:** each enabled `sources.yaml` `schedules[]` row → Cadence cron at process startup (`workflow_id` = `scheduled_backup_<id>`). Each tick runs `BackupWorkflow` or `DirectoryBackupWorkflow` with the same resolved request as `POST /backups`. Job payload includes `schedule_job_id` when cron-fired.
-- **Startup:** worker registers crons after workflows are registered. If the workflow id already exists, startup logs and continues (change cron expression → terminate the old workflow in Cadence UI, then restart CosmosBDR).
+- **Backup schedules:** each `sources.yaml` `schedules[]` row with `enabled: true` (default when omitted) → Cadence cron (`workflow_id` = `scheduled_backup_<id>`). Each tick runs `BackupWorkflow` or `DirectoryBackupWorkflow` with the same resolved request as `POST /backups`. Job payload includes `schedule_job_id` when cron-fired.
+- **`enabled` in YAML:** **declared default** for deploy and **`POST /schedules/reconcile`** — not the knob for day-to-day pause. Leave schedule definitions and cron expressions in git-reviewed YAML; use **`enabled: false`** for “off by default” on new environments. **Pause/resume at runtime:** `POST /schedules/{id}/deregister` and `POST /schedules/{id}/register` (no stack restart). **Note:** restart or reconcile re-applies YAML `enabled` (API pause is overridden if YAML still says `enabled: true`).
+- **Startup:** reconcile enabled/disabled rows and cron drift (register / terminate) after the worker starts.
+- **Schedule API:** `GET /schedules`, `POST /schedules/{id}/register`, `POST /schedules/{id}/deregister`, `POST /schedules/reconcile` (see runbook).
 - **Restore:** manual HTTP only (no cron). Single-file: `POST /restores` → `RestoreWorkflow`. Directory: same endpoint → `DirectoryRestoreWorkflow` (fan-out child restores; targets from Postgres backup metadata, not live disk listing).
 
 ---
@@ -517,7 +519,7 @@ Shared `chunkcodec` for backup and restore.
 8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
 9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 10. **Directory selection (Phase D):** modes **`all`** (default) and **`matched`**; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; **`max_depth`** optional, default unlimited
-11. **Schedules (Phase E):** nested under each source in **`sources.yaml`** only; global unique schedule `id`; Cadence cron per enabled row → `BackupWorkflow` or `DirectoryBackupWorkflow`
+11. **Schedules (Phase E / E.1):** nested under each source in **`sources.yaml`**; global unique schedule `id`; YAML `enabled` = deploy/reconcile default; runtime **`/schedules` API** for register/deregister
 12. **DB backups (Phase H):** restore = **dump file write-back** only; import into DB engines is out of scope v1. `pre_backup` commands are YAML-only (not API-driven).
 13. **Same SSH host, files + DB:** use **multiple `source_id`s** (e.g. `…-files` and `…-db`); YAML anchors for shared host/ssh; **`pre_backup` only on the DB source** (§2).
 
@@ -682,7 +684,8 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase C | skipped | No `policy_id`; schedules live under each source in `sources.yaml` |
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
 | Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block; `DirectoryRestoreWorkflow`, `ListDirectoryRestoreActivity`, `POST /restores` + `source_directory_job_id` |
-| Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
+| Phase E | done | `sources.yaml` `schedules` → Cadence cron (`scheduled_backup_<id>`) |
+| Phase E.1 | done | Schedule reconcile at startup; `GET/POST /schedules` register/deregister/reconcile |
 | Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
 | Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
 | DB backup strategy | locked | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type |

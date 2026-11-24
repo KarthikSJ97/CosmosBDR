@@ -112,6 +112,31 @@ func (r *SourceRegistry) GetSource(id string) (ResolvedSource, bool) {
 	return s, ok
 }
 
+// ListAllBackupSchedules returns every schedule row in stable source/schedule order.
+func (r *SourceRegistry) ListAllBackupSchedules() []ResolvedBackupSchedule {
+	sources := r.ListSources()
+	out := make([]ResolvedBackupSchedule, 0)
+	for _, src := range sources {
+		for _, sch := range src.Schedules {
+			out = append(out, ResolvedBackupSchedule{
+				SourceID:       src.ID,
+				BackupSchedule: sch,
+			})
+		}
+	}
+	return out
+}
+
+// FindBackupSchedule looks up a schedule by global id across all sources.
+func (r *SourceRegistry) FindBackupSchedule(scheduleID string) (ResolvedBackupSchedule, bool) {
+	for _, sch := range r.ListAllBackupSchedules() {
+		if sch.ID == scheduleID {
+			return sch, true
+		}
+	}
+	return ResolvedBackupSchedule{}, false
+}
+
 // ListEnabledBackupSchedules returns all enabled schedules in stable source/schedule order.
 func (r *SourceRegistry) ListEnabledBackupSchedules() []ResolvedBackupSchedule {
 	sources := r.ListSources()
