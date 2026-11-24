@@ -7,8 +7,9 @@ type BackupJobPayload struct {
 	SourceID        string          `json:"source_id,omitempty"`
 	BackupKey       string          `json:"backup_key,omitempty"`
 	RemoteIO        bool            `json:"remote_io,omitempty"`
-	SourceJobItemID string          `json:"source_job_item_id,omitempty"` // restore: pin a backup version; empty = latest eligible backup
-	Directory       *DirectoryScope `json:"directory,omitempty"`          // set → directory parent workflow
+	SourceJobItemID       string          `json:"source_job_item_id,omitempty"`        // restore: pin a backup version; empty = latest eligible backup
+	SourceDirectoryJobID  string          `json:"source_directory_job_id,omitempty"`   // directory restore: pin snapshot set from a directory backup parent job
+	Directory             *DirectoryScope `json:"directory,omitempty"`                 // set → directory parent workflow (backup or restore filter)
 	ParentJobID     string          `json:"parent_job_id,omitempty"`      // child file backup of a directory job
 	ScheduleJobID   string          `json:"schedule_job_id,omitempty"`    // sources.yaml schedules[].id when cron-fired
 	PreBackup       bool            `json:"pre_backup,omitempty"`         // Phase H: SSH dump before inspect/chunks

@@ -143,6 +143,40 @@ Output: `<remote_root>/<relative_path>` on the Windows host (overwrites if the f
 
 Optional local staging only: set top-level `"target_path": "/host-data/My Memes.pdf"` to write on the Mac instead.
 
+**Directory restore** — restores every eligible file under a folder from backup metadata (not a live disk walk). Each file uses the same chunk pipeline as single-file restore.
+
+Pin a specific directory backup run (recommended for DR drills):
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/restores \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "flow_type": "RESTORE",
+    "payload": {
+      "source_id": "win-home-laptop",
+      "relative_path": "dir-backup-test",
+      "source_directory_job_id": "<parent_job_id from directory backup>"
+    }
+  }'
+```
+
+Or restore **latest** snapshot per `backup_key` under the folder (omit `source_directory_job_id`):
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/restores \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "flow_type": "RESTORE",
+    "payload": {
+      "source_id": "win-home-laptop",
+      "relative_path": "dir-backup-test",
+      "directory": { "selection": "all" }
+    }
+  }'
+```
+
+Optional `directory` include/exclude filters the **backup keys** in that set (same rules as directory backup), not files currently on disk.
+
 No Mac `ssh -L`, no extra env vars beyond the source block.
 
 ---

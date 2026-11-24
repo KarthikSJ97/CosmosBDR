@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"cosmosbdr/src/cadence/workflows"
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/types"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -40,7 +38,7 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 		})
 	}
 	if strings.TrimSpace(req.Payload.SourceID) != "" {
-		if err := ResolveBackupWorkflowRequest(h.Registry, &req); err != nil {
+		if err := ResolveRestoreWorkflowRequest(h.Registry, &req); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": err.Error(),
 			})
@@ -57,14 +55,16 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 			})
 		}
 	}
-	workflowID := fmt.Sprintf("restore_%s_%s", req.FlowType, uuid.New().String())
-	options := cadenceClient.StartWorkflowOptions{
-		ID:                           workflowID,
-		TaskList:                     "cosmosbdr-task-queue",
-		ExecutionStartToCloseTimeout: 1 * time.Hour,
+	workflowLabel := "Restore"
+	options := cadenceClient.StartWorkflowOptions{TaskList: TaskQueue}
+	if IsDirectoryRestore(&req) {
+		options.ID = fmt.Sprintf("restore_dir_%s", uuid.New().String())
+		workflowLabel = "Directory restore"
+	} else {
+		options.ID = fmt.Sprintf("restore_%s_%s", req.FlowType, uuid.New().String())
 	}
 
-	we, err := h.CadenceClient.ExecuteWorkflow(c.Context(), options, workflows.RestoreWorkflow, req)
+	we, err := StartRestoreWorkflow(c.Context(), h.CadenceClient, req, options)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to start restore workflow: " + err.Error(),
@@ -72,7 +72,7 @@ func (h RestoreHandler) TriggerRestore(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
-		"message":     "Restore workflow triggered successfully",
+		"message":     workflowLabel + " workflow triggered successfully",
 		"workflow_id": we.GetID(),
 		"run_id":      we.GetRunID(),
 	})

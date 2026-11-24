@@ -2,13 +2,13 @@
 
 Living design doc for phased implementation. Reference this document when building any step/phase.
 
-**Last updated:** 2026-11-23 (Phase H DB backup strategy locked; Phase G encrypt/compress done)
+**Last updated:** 2026-11-24 (directory restore; Phase H DB backup strategy locked; Phase G encrypt/compress done)
 
 ---
 
 ## Current baseline (what exists today)
 
-- **Ingress:** HTTP triggers → Cadence `BackupWorkflow` / `RestoreWorkflow` (restore is manual).
+- **Ingress:** HTTP triggers → Cadence `BackupWorkflow` / `DirectoryBackupWorkflow` / `RestoreWorkflow` / `DirectoryRestoreWorkflow` (restore is manual).
 - **Source data:** Host folder bind-mounted as `/host-data` via `HOST_DATA_PATH` in `docker-compose.yml` (backup *source*, not Seaweed).
 - **Pipeline:** Single file per job → `InspectFile` (size/mtime/hash, SKIP + chunk clone) → fixed 4 MB chunks → content-hash dedup → SeaweedFS (S3 API) → Postgres job/item/chunk metadata + snapshot manifest.
 - **Versions:** List/restore by logical path; optional `source_job_item_id` pins a version (default latest eligible).
@@ -409,7 +409,7 @@ Fixed order; predictable, same as common backup tools:
 
 - **Backup schedules:** each enabled `sources.yaml` `schedules[]` row → Cadence cron at process startup (`workflow_id` = `scheduled_backup_<id>`). Each tick runs `BackupWorkflow` or `DirectoryBackupWorkflow` with the same resolved request as `POST /backups`. Job payload includes `schedule_job_id` when cron-fired.
 - **Startup:** worker registers crons after workflows are registered. If the workflow id already exists, startup logs and continues (change cron expression → terminate the old workflow in Cadence UI, then restart CosmosBDR).
-- **Restore:** manual HTTP only (no cron).
+- **Restore:** manual HTTP only (no cron). Single-file: `POST /restores` → `RestoreWorkflow`. Directory: same endpoint → `DirectoryRestoreWorkflow` (fan-out child restores; targets from Postgres backup metadata, not live disk listing).
 
 ---
 
@@ -473,11 +473,19 @@ Shared `chunkcodec` for backup and restore.
 - **All backup bytes** live in **SeaweedFS** on the machine running CosmosBDR, with chunk data on a **host bind-mounted path** (`SEAWEED_DATA_PATH`). Remote SFTP/SSH paths are **sources only**—never the durability tier.
 - **Restore (default):** read chunks from Seaweed → decrypt/decompress → write back to the **same path as the backup source** (local `container_mount` or SFTP `remote_root` + relative path). Existing files are overwritten (create if missing; parent dirs created on write). Optional **`target_path`** on the API restores to a local path on the CosmosBDR host instead (e.g. DR staging under `/host-data`).
 
+**Directory restore (implemented):**
+
+- **List targets:** `ListDirectoryRestoreActivity` reads eligible backup snapshots (never walks the remote tree).
+- **Pin a directory backup run:** `payload.source_directory_job_id` = parent job id from `DirectoryBackupWorkflow` → restores each child file with that run’s `source_job_item_id`.
+- **Latest under a folder:** `source_id` + directory `relative_path` and optional `directory` selection block → latest eligible snapshot per `backup_key` under that prefix; optional glob/regex filter applies to **backed-up keys**, not live files.
+- **Orchestration:** parent `DirectoryRestoreWorkflow` → concurrent child `RestoreWorkflow` per file (same chunk decrypt/decompress/write path as single-file restore).
+
 **Endpoints (conceptual):**
 
-- **Backup:** `{ "source_id", "relative_path" }` in payload (see runbook for shape).
+- **Backup:** `{ "source_id", "relative_path" }` in payload (see runbook for shape); directory jobs add `directory` scope.
 - **List:** by `backup_key` or `source_id` + path.
-- **Restore:** `{ "backup_key", "source_job_item_id?", "target_path"?: "/host-data/..." }` — without `target_path`, default is the original source location from `backup_key`; `target_path` overrides to a local path on the host.
+- **Restore (file):** `source_id` + `relative_path` (file path), optional `source_job_item_id`, optional top-level `target_path`.
+- **Restore (directory):** `source_id` + directory `relative_path`, optional `source_directory_job_id`, optional `directory` filter; see [sftp-sources-runbook.md](./sftp-sources-runbook.md).
 
 ---
 
@@ -488,7 +496,7 @@ Shared `chunkcodec` for backup and restore.
 | **A** | YAML in `src/config/` (schema, structs, loader), fail-fast startup, `SourceRegistry`, `backup_key` in DB/API |
 | **B** | `SFTPReader` + refactor inspect/chunk to `SourceReader` (single file) |
 | **C** | *(skipped)* Named policies / `policy_id` — not used; explicit `source_id` + `relative_path` instead |
-| **D** | Directory parent workflow + selection (`all` / `matched`), glob + regex, limits |
+| **D** | Directory parent workflow + selection (`all` / `matched`), glob + regex, limits; **directory restore** parent + child file restores |
 | **E** | Cadence cron registration at startup from `sources.yaml` `schedules` (per source); stable workflow id per schedule `id` |
 | **F** | Retention + chunk GC workflow |
 | **G** | Encrypt/compress in chunk pipeline + restore |
@@ -673,7 +681,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Phase B | done | SFTP `SourceReader`, inspect/chunk via `sourceread` |
 | Phase C | skipped | No `policy_id`; schedules live under each source in `sources.yaml` |
 | SFTP ops runbook | done | [sftp-sources-runbook.md](./sftp-sources-runbook.md) — Docker LAN, `.env` per source, backup/restore |
-| Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block |
+| Phase D | done | `DirectoryBackupWorkflow`, `ListDirectoryActivity`, `POST /backups` with `directory` block; `DirectoryRestoreWorkflow`, `ListDirectoryRestoreActivity`, `POST /restores` + `source_directory_job_id` |
 | Phase E | done | `sources.yaml` `schedules` → Cadence cron at startup (`scheduled_backup_<id>`) |
 | Phase F | done | `RetentionGCWorkflow` daily cron; per-source TTL when `ttl_days > 0`; hard delete metadata + Seaweed; refcount via `item_chunks` |
 | Phase G | done | `src/chunkcodec`; backup compress→encrypt, restore decrypt→decompress; `chunks.compression_alg` + `chunks.encrypted` |
@@ -688,7 +696,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | Topic | Decision | Implication |
 |-------|----------|-------------|
 | **Where backups live** | All chunk/manifest storage in **Seaweed** on the **local host** running the server (`SEAWEED_DATA_PATH` bind mount). | Ingest from local mount or remote SFTP; durability is always central Seaweed + Postgres on this host. |
-| **Restore default** | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type. |
+| **Restore default** | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. Directory restore fans out the same per-file path. | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type. |
 | **WORM vs TTL** | **No WORM** for v1. **TTL per source** in `sources.yaml`. After TTL, delete **version metadata** and **physically remove** Seaweed objects / chunk rows that are **no longer referenced**. | Phase F implements refcount-safe GC; deduped chunks shared with newer backups are never deleted early. |
 | **YAML validation** | Schemas, struct mapping, and loader in **`src/config/`**. | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
 | **Database backups** | **Tier 1 (default):** host/cron produces dump → **`sftp`** backs up `relative_path`. **Tier 2 (optional):** `pre_backup` on a **dedicated** **`sftp`** source id (generic `command` or `engine` preset). **Same machine as file backups:** second source id without `pre_backup` (§2). | No separate DB source types; chunk pipeline unchanged; restore = file only v1. |

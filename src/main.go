@@ -119,6 +119,7 @@ func main() {
 
 		w.RegisterWorkflow(workflows.BackupWorkflow)
 		w.RegisterWorkflow(workflows.DirectoryBackupWorkflow)
+		w.RegisterWorkflow(workflows.DirectoryRestoreWorkflow)
 		w.RegisterWorkflow(workflows.RestoreWorkflow)
 		w.RegisterWorkflow(workflows.RetentionGCWorkflow)
 		w.RegisterActivity(jobActivities.InitJobActivity)
@@ -132,6 +133,7 @@ func main() {
 		w.RegisterActivity(jobActivities.FinalizeSkippedBackupItemActivity)
 		w.RegisterActivity(jobActivities.FinalizeJobActivity)
 		w.RegisterActivity(jobActivities.ListDirectoryActivity)
+		w.RegisterActivity(jobActivities.ListDirectoryRestoreActivity)
 		w.RegisterActivity(jobActivities.GetCadenceRuntimeLimitsActivity)
 		w.RegisterActivity(jobActivities.FailJobExecutionActivity)
 		w.RegisterActivity(jobActivities.ResolveRestoreSourceActivity)

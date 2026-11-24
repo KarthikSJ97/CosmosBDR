@@ -4,4 +4,4 @@ A zero-trust, distributed backup and disaster recovery SaaS engine built with Go
 ## Docs
 
 - [Multi-source backup strategy](docs/multi-source-backup-strategy.md)
-- [SFTP sources runbook](docs/sftp-sources-runbook.md) — `.env` per source id, Docker connectivity, backup/restore commands
+- [SFTP sources runbook](docs/sftp-sources-runbook.md) — `.env` per source id, Docker connectivity, file and directory backup/restore

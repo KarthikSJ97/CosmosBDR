@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"cosmosbdr/src/db/schema"
@@ -103,6 +104,49 @@ func (r *JobItemRepository) GetEligibleBackupItemByID(ctx context.Context, itemI
 // GetLatestEligibleBackupItemByPath is like GetLatestCompletedItemByPath (BACKUP-only).
 func (r *JobItemRepository) GetLatestEligibleBackupItemByPath(ctx context.Context, itemPath string) (*schema.JobItem, error) {
 	return r.GetLatestCompletedItemByPath(ctx, itemPath)
+}
+
+// ListBackupSnapshotsByParentJobID returns backup job_items from child file jobs of a directory backup parent.
+func (r *JobItemRepository) ListBackupSnapshotsByParentJobID(ctx context.Context, parentJobID string) ([]schema.JobItem, error) {
+	if parentJobID == "" {
+		return nil, fmt.Errorf("parent_job_id is required")
+	}
+	var items []schema.JobItem
+	err := r.backupSnapshotQuery(ctx).
+		Where("jobs.payload->>'parent_job_id' = ?", parentJobID).
+		Order("job_items.backup_key ASC").
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list snapshots for directory backup %q: %w", parentJobID, err)
+	}
+	return items, nil
+}
+
+// ListLatestEligibleBackupsUnderBackupKeyPrefix returns the newest eligible snapshot per backup_key under prefix.
+func (r *JobItemRepository) ListLatestEligibleBackupsUnderBackupKeyPrefix(ctx context.Context, backupKeyPrefix string) ([]schema.JobItem, error) {
+	backupKeyPrefix = strings.TrimSpace(backupKeyPrefix)
+	if backupKeyPrefix == "" {
+		return nil, fmt.Errorf("backup_key prefix is required")
+	}
+	like := backupKeyPrefix
+	if !strings.HasSuffix(like, "%") {
+		like = like + "%"
+	}
+	var items []schema.JobItem
+	err := r.DB.WithContext(ctx).Raw(`
+		SELECT DISTINCT ON (job_items.backup_key) job_items.*
+		FROM job_items
+		INNER JOIN jobs ON jobs.id = job_items.job_id
+		WHERE jobs.status = ?
+		  AND jobs.flow_type = ?
+		  AND job_items.status IN ?
+		  AND job_items.backup_key LIKE ?
+		ORDER BY job_items.backup_key, job_items.created_at DESC
+	`, "SUCCESS", string(schema.FlowBackup), backupSnapshotStatuses, like).Scan(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list latest backups under prefix %q: %w", backupKeyPrefix, err)
+	}
+	return items, nil
 }
 
 // ListEligibleBackupItemsByPath returns backup snapshots for a file (including unchanged dedup skips), newest first.

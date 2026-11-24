@@ -42,3 +42,29 @@ type DirectoryBackupWorkflowResponse struct {
 	FilesSucceeded int    `json:"files_succeeded"`
 	FilesFailed    int    `json:"files_failed"`
 }
+
+// DirectoryRestoreTarget is one file to restore under a directory restore job.
+type DirectoryRestoreTarget struct {
+	RelativePath    string `json:"relative_path"`
+	BackupKey       string `json:"backup_key"`
+	SourceJobItemID string `json:"source_job_item_id"`
+	SizeBytes       int64  `json:"size_bytes"`
+}
+
+type ListDirectoryRestoreRequest struct {
+	SourceID             string          `json:"source_id"`
+	DirRelative          string          `json:"dir_relative"`
+	SourceDirectoryJobID string          `json:"source_directory_job_id,omitempty"`
+	Scope                *DirectoryScope `json:"scope,omitempty"`
+}
+
+type ListDirectoryRestoreResponse struct {
+	Files []DirectoryRestoreTarget `json:"files"`
+}
+
+type DirectoryRestoreWorkflowResponse struct {
+	JobID          string `json:"job_id"`
+	FilesTotal     int    `json:"files_total"`
+	FilesSucceeded int    `json:"files_succeeded"`
+	FilesFailed    int    `json:"files_failed"`
+}
