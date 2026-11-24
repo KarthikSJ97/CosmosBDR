@@ -12,6 +12,61 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// RunSSHStdoutCmd runs a single command string on the remote host (Windows OpenSSH uses cmd.exe; no Unix shell quoting).
+func RunSSHStdoutCmd(ctx context.Context, src config.ResolvedSource, cmdLine string) ([]byte, error) {
+	cmdLine = strings.TrimSpace(cmdLine)
+	if cmdLine == "" {
+		return nil, fmt.Errorf("ssh exec: empty command")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	client, err := connectSSHOnly(src)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("ssh session: %w", err)
+	}
+	defer session.Close()
+
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(cmdLine)
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGTERM)
+		return nil, ctx.Err()
+	case err := <-done:
+		if err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if msg != "" {
+				return nil, fmt.Errorf("ssh exec failed: %w: %s", err, msg)
+			}
+			return nil, fmt.Errorf("ssh exec failed: %w", err)
+		}
+	}
+	return stdout.Bytes(), nil
+}
+
+// RunSSHStdout runs argv on the remote host and returns stdout (Unix-oriented shell quoting).
+func RunSSHStdout(ctx context.Context, src config.ResolvedSource, argv []string) ([]byte, error) {
+	if len(argv) == 0 {
+		return nil, fmt.Errorf("ssh exec: empty command")
+	}
+	return RunSSHStdoutCmd(ctx, src, strings.Join(shellQuoteArgs(argv), " "))
+}
+
 // RunSSHCommand runs argv on the remote host (remote user's login shell interprets a single quoted command line).
 func RunSSHCommand(ctx context.Context, src config.ResolvedSource, argv []string, env map[string]string) error {
 	if len(argv) == 0 {

@@ -18,7 +18,7 @@ type BackupWorkflowRequest struct {
 	FlowType   string           `json:"flow_type"`
 	SourcePath string           `json:"source_path"`
 	TargetPath string           `json:"target_path"`
-	ListRootPath string         `json:"-"` // directory backup: set by API resolver only
+	ListRootPath string         `json:"list_root_path,omitempty"` // set by API/schedule resolver; required for directory backup listing
 	Payload    BackupJobPayload `json:"payload"`
 }
 

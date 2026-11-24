@@ -61,18 +61,50 @@ func (r *SourceRegistry) ResolveDirectoryLayout(sourceID, dirRelative string) (D
 	return layout, nil
 }
 
+// cleanRemotePath normalizes Windows/SFTP absolute paths for comparison.
+func cleanRemotePath(p string) string {
+	p = strings.TrimSpace(p)
+	if strings.HasPrefix(strings.ToLower(p), `\\?\`) {
+		p = p[4:]
+	}
+	if strings.HasPrefix(strings.ToLower(p), `\\.\`) {
+		p = p[4:]
+	}
+	return path.Clean(strings.ReplaceAll(p, `\`, "/"))
+}
+
+// relTrimAfterRoot returns absPath relative to root (remote paths, slash-separated).
+func relTrimAfterRoot(absPath, root string) (string, error) {
+	absPath = cleanRemotePath(absPath)
+	root = cleanRemotePath(root)
+	if strings.EqualFold(absPath, root) {
+		return "", nil
+	}
+	if !pathUnderRemoteRoot(absPath, root) {
+		return "", fmt.Errorf("path %q is outside root %q", absPath, root)
+	}
+	suffix := strings.TrimPrefix(absPath[len(root):], "/")
+	return NormalizeRelativePath(suffix), nil
+}
+
+// pathUnderRemoteRoot reports whether absPath is root or a descendant (POSIX paths on SFTP).
+func pathUnderRemoteRoot(absPath, root string) bool {
+	absPath = cleanRemotePath(absPath)
+	root = cleanRemotePath(root)
+	if absPath == root || strings.EqualFold(absPath, root) {
+		return true
+	}
+	if len(root) >= 2 && root[1] == ':' {
+		return strings.HasPrefix(strings.ToLower(absPath), strings.ToLower(root)+"/")
+	}
+	return strings.HasPrefix(absPath, root+"/")
+}
+
 // RelToSource converts an absolute object path to a stable relative path from the source root.
 func RelToSource(layout DirectoryLayout, absPath string, remote bool) (string, error) {
 	prefix := layout.SourcePathPrefix
 	if remote {
-		absPath = path.Clean(absPath)
-		prefix = path.Clean(prefix)
-		trim := strings.TrimPrefix(absPath, prefix)
-		trim = strings.TrimPrefix(trim, "/")
-		if trim == absPath && absPath != prefix {
-			return "", fmt.Errorf("path %q is outside source root %q", absPath, prefix)
-		}
-		return NormalizeRelativePath(trim), nil
+		return relTrimAfterRoot(absPath, prefix)
 	}
 	absPath = filepath.Clean(absPath)
 	prefix = filepath.Clean(prefix)
@@ -87,11 +119,7 @@ func RelToSource(layout DirectoryLayout, absPath string, remote bool) (string, e
 func RelToDir(layout DirectoryLayout, absPath string, remote bool) (string, error) {
 	root := layout.ListRootPath
 	if remote {
-		absPath = path.Clean(absPath)
-		root = path.Clean(root)
-		trim := strings.TrimPrefix(absPath, root)
-		trim = strings.TrimPrefix(trim, "/")
-		return NormalizeRelativePath(trim), nil
+		return relTrimAfterRoot(absPath, root)
 	}
 	absPath = filepath.Clean(absPath)
 	root = filepath.Clean(root)

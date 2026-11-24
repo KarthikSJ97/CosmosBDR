@@ -18,3 +18,46 @@ sources:
       secret_ref: WIN_HOME_LAPTOP_SSH_KEY
       known_hosts_policy: pinned
       host_key_fingerprint: env:WIN_HOME_LAPTOP_HOST_KEY_FINGERPRINT
+    # Directory drill under remote_root (e.g. D:/Karthik/cosmosbdr_data/dir-backup-test).
+    # On Windows, create sample layout:
+    #   dir-backup-test/baseline.txt
+    #   dir-backup-test/docs/guide.pdf
+    #   dir-backup-test/logs/app.log
+    #   dir-backup-test/nested/deep/beyond-depth.txt   # depth 3 — matched job uses max_depth: 2
+    #   dir-backup-test/scratch/temp.tmp               # excluded (glob + regex on all job)
+    #   dir-backup-test/excluded/skip.txt              # excluded on matched job
+    schedules:
+      - id: win-dir-test-all-30m
+        relative_path: dir-backup-test
+        schedule: "*/30 * * * *"
+        enabled: false
+        directory:
+          selection: all
+          exclude:
+            - type: glob
+              pattern: "**/*.tmp"
+            - type: glob
+              pattern: "**/~$*"
+            - type: regex
+              pattern: '^scratch/.*'
+      - id: win-dir-test-matched-30m
+        relative_path: dir-backup-test
+        schedule: "*/30 * * * *"
+        enabled: false
+        directory:
+          selection: matched
+          include:
+            - type: glob
+              pattern: "**/*.txt"
+            - type: glob
+              pattern: "**/*.pdf"
+            - type: regex
+              pattern: '^logs/.*\.log$'
+          exclude:
+            - type: glob
+              pattern: "excluded/**"
+            - type: regex
+              pattern: '^nested/.*'
+          max_depth: 2
+          min_file_bytes: 1
+          max_file_bytes: 10485760

@@ -50,6 +50,28 @@ func TestResolveDirectoryLayout_SFTPSubdir(t *testing.T) {
 	}
 }
 
+func TestRelToSource_RemoteOutsideRoot(t *testing.T) {
+	layout := DirectoryLayout{
+		SourcePathPrefix: "D:/Karthik/cosmosbdr_data",
+		ListRootPath:     "D:/Karthik/cosmosbdr_data/dir-backup-test",
+	}
+	_, err := RelToSource(layout, ".cache/huggingface/agent.json", true)
+	if err == nil {
+		t.Fatal("expected error for path outside source root")
+	}
+}
+
+func TestRelToDir_RemoteOutsideDirectoryRoot(t *testing.T) {
+	layout := DirectoryLayout{
+		SourcePathPrefix: "D:/Karthik/cosmosbdr_data",
+		ListRootPath:     "D:/Karthik/cosmosbdr_data/dir-backup-test",
+	}
+	_, err := RelToDir(layout, "D:/Karthik/cosmosbdr_data/.cache/x", true)
+	if err == nil {
+		t.Fatal("expected error for path outside directory list root")
+	}
+}
+
 func TestRelToDir_Local(t *testing.T) {
 	layout := DirectoryLayout{
 		SourcePathPrefix: "/host-data",
