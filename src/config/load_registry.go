@@ -65,11 +65,20 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 
 		resolved := ResolvedSource{SourceDefinition: src}
 		if strings.ToLower(src.Type) == "sftp" {
-			secret, err := resolveEnvRef(src.SSH.SecretRef, fmt.Sprintf("sources[%d].ssh.secret_ref", i))
-			if err != nil {
-				return nil, err
+			if ref := strings.TrimSpace(src.SSH.SecretRef); ref != "" {
+				secret, err := resolveEnvRef(ref, fmt.Sprintf("sources[%d].ssh.secret_ref", i))
+				if err != nil {
+					return nil, err
+				}
+				resolved.ResolvedSecret = secret
 			}
-			resolved.ResolvedSecret = secret
+			if ref := strings.TrimSpace(src.SSH.PasswordRef); ref != "" {
+				pass, err := resolveEnvRef(ref, fmt.Sprintf("sources[%d].ssh.password_ref", i))
+				if err != nil {
+					return nil, err
+				}
+				resolved.ResolvedSSHPassword = pass
+			}
 			pre, err := resolvePreBackupEnv(prefix, &src)
 			if err != nil {
 				return nil, err
@@ -116,8 +125,10 @@ func validateSource(src *SourceDefinition, index int) error {
 		if src.SSH == nil {
 			return fmt.Errorf("%s (%s): ssh block is required for type sftp", prefix, src.ID)
 		}
-		if strings.TrimSpace(src.SSH.SecretRef) == "" {
-			return fmt.Errorf("%s (%s): ssh.secret_ref is required", prefix, src.ID)
+		hasKey := strings.TrimSpace(src.SSH.SecretRef) != ""
+		hasPass := strings.TrimSpace(src.SSH.PasswordRef) != ""
+		if !hasKey && !hasPass {
+			return fmt.Errorf("%s (%s): ssh.secret_ref and/or ssh.password_ref is required", prefix, src.ID)
 		}
 	default:
 		return fmt.Errorf("%s (%s): unsupported type %q", prefix, src.ID, typ)

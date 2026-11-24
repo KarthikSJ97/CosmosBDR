@@ -61,3 +61,33 @@ sources:
           max_depth: 2
           min_file_bytes: 1
           max_file_bytes: 10485760
+  # OVH (Linux over SSH/SFTP): pg_dump on the VM, then backup dump under remote_root.
+  # Single-file jobs only on this source_id (pre_backup runs before every backup).
+  - id: ovhcloud-db
+    type: sftp
+    host: env:OVHCLOUD_DB_HOST
+    port: 22
+    user: env:OVHCLOUD_DB_USER
+    remote_root: env:OVHCLOUD_DB_REMOTE_ROOT
+    retention:
+      ttl_days: 90
+    ssh:
+      password_ref: OVHCLOUD_DB_SSH_PASSWORD
+      known_hosts_policy: pinned
+      host_key_fingerprint: env:OVHCLOUD_DB_HOST_KEY_FINGERPRINT
+    # Postgres runs in Docker on the VPS (madume-postgres-1); dump to a host path under remote_root.
+    pre_backup:
+      command:
+        - bash
+        - -lc
+        - mkdir -p /home/ubuntu/backups/cosmosbdr/db && docker exec -e PGPASSWORD="$PGPASSWORD" madume-postgres-1 pg_dump -Fc -U madume -d madume > /home/ubuntu/backups/cosmosbdr/db/nightly.dump
+      env_refs:
+        PGPASSWORD: OVHCLOUD_DB_PG_PASSWORD
+      output:
+        relative_path: db/nightly.dump
+        cleanup_after: true
+    schedules:
+      - id: ovhcloud-pg-manual-test
+        relative_path: db/nightly.dump
+        schedule: "0 3 * * *"
+        enabled: false

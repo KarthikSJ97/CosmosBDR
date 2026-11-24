@@ -42,7 +42,8 @@ type ResolvedBackupSchedule struct {
 
 // SSHConfig holds non-secret SSH params; secrets are env refs only.
 type SSHConfig struct {
-	SecretRef          string `yaml:"secret_ref"`
+	SecretRef          string `yaml:"secret_ref,omitempty"`
+	PasswordRef        string `yaml:"password_ref,omitempty"`
 	KnownHostsPolicy   string `yaml:"known_hosts_policy,omitempty"`
 	HostKeyFingerprint string `yaml:"host_key_fingerprint,omitempty"`
 	ProxyJump          string `yaml:"proxy_jump,omitempty"`
@@ -67,6 +68,7 @@ type ResolvedSSH struct {
 // ResolvedSource is a validated source ready for runtime use.
 type ResolvedSource struct {
 	SourceDefinition
-	ResolvedSecret    string
+	ResolvedSecret     string
+	ResolvedSSHPassword string
 	ResolvedPreBackup *ResolvedPreBackup
 }

@@ -75,7 +75,7 @@ type ProcessFileChunkRequest struct {
 	ItemID      string `json:"item_id"`
 	ItemPath    string `json:"item_path"`
 	SourceID    string `json:"source_id,omitempty"`
-	FileName    string `json:"file_name"` // relative path used for SeaweedFS object prefix
+	FileName    string `json:"file_name"` // source-relative path; Seaweed prefix is source_id/file_name
 	ChunkIndex  int    `json:"chunk_index"`
 	OffsetBytes int64  `json:"offset_bytes"`
 	LengthBytes int    `json:"length_bytes"`

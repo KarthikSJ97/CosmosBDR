@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/manifest"
 	"cosmosbdr/src/types"
@@ -98,7 +99,11 @@ func (ja *JobActivities) PublishSnapshotManifestActivity(ctx context.Context, in
 		return types.PublishSnapshotManifestResponse{}, fmt.Errorf("job item not found: %s", input.ItemID)
 	}
 
-	key, err := ja.publishSnapshotManifest(ctx, item, input.FileName, "")
+	filePrefix, err := config.SeaweedObjectPrefixFromBackupKey(item.BackupKey, input.FileName)
+	if err != nil {
+		return types.PublishSnapshotManifestResponse{}, fmt.Errorf("seaweed object prefix: %w", err)
+	}
+	key, err := ja.publishSnapshotManifest(ctx, item, filePrefix, "")
 	if err != nil {
 		return types.PublishSnapshotManifestResponse{}, err
 	}

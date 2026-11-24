@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/sourceread"
 	"cosmosbdr/src/types"
@@ -34,8 +35,8 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 	hasher.Write(buffer)
 	chunkHash := hex.EncodeToString(hasher.Sum(nil))
 
-	// 5. Object key: {file_name}/chunks/{chunk_hash} (bucket is configured on the client)
-	filePrefix := input.FileName
+	// 5. Object key: {source_id}/{relative_path}/chunks/{chunk_hash} (bucket is configured on the client)
+	filePrefix := config.FormatSeaweedObjectPrefix(input.SourceID, input.FileName)
 	if filePrefix == "" {
 		filePrefix = filepath.Base(input.ItemPath)
 	}

@@ -13,6 +13,34 @@ func FormatBackupKey(sourceID, relativePath string) string {
 	return sourceID + backupKeySep + NormalizeRelativePath(relativePath)
 }
 
+// FormatSeaweedObjectPrefix is the S3 object key prefix under the bucket: source_id/relative_path.
+func FormatSeaweedObjectPrefix(sourceID, relativePath string) string {
+	rel := NormalizeRelativePath(relativePath)
+	sourceID = strings.TrimSpace(sourceID)
+	if sourceID == "" {
+		return rel
+	}
+	if rel == "" || rel == "." {
+		return sourceID
+	}
+	return sourceID + "/" + rel
+}
+
+// SeaweedObjectPrefixFromBackupKey derives the object prefix from backup_key metadata.
+func SeaweedObjectPrefixFromBackupKey(backupKey, relativePathFallback string) (string, error) {
+	sourceID, rel, err := ParseBackupKey(backupKey)
+	if err != nil {
+		if strings.TrimSpace(relativePathFallback) == "" {
+			return "", err
+		}
+		return NormalizeRelativePath(relativePathFallback), nil
+	}
+	if rel == "" {
+		rel = NormalizeRelativePath(relativePathFallback)
+	}
+	return FormatSeaweedObjectPrefix(sourceID, rel), nil
+}
+
 // ParseBackupKey splits source_id and relative_path from a backup_key.
 func ParseBackupKey(backupKey string) (sourceID, relativePath string, err error) {
 	backupKey = strings.TrimSpace(backupKey)

@@ -12,3 +12,13 @@ func TestFormatParseBackupKey(t *testing.T) {
 		t.Fatalf("parse: %s %s %v", sid, rel, err)
 	}
 }
+
+func TestFormatSeaweedObjectPrefix(t *testing.T) {
+	if got := FormatSeaweedObjectPrefix("ovhcloud-db", "db/nightly.dump"); got != "ovhcloud-db/db/nightly.dump" {
+		t.Fatalf("got %q", got)
+	}
+	prefix, err := SeaweedObjectPrefixFromBackupKey("ovhcloud-db:db/nightly.dump", "")
+	if err != nil || prefix != "ovhcloud-db/db/nightly.dump" {
+		t.Fatalf("from key: %q %v", prefix, err)
+	}
+}

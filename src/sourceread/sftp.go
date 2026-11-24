@@ -73,9 +73,9 @@ func dialSSH(addr string, cfg *ssh.ClientConfig, src config.ResolvedSource) (*ss
 }
 
 func sshClientConfig(src config.ResolvedSource) (*ssh.ClientConfig, error) {
-	signer, err := ssh.ParsePrivateKey([]byte(src.ResolvedSecret))
+	auth, err := sshAuthMethods(src)
 	if err != nil {
-		return nil, fmt.Errorf("parse ssh private key: %w", err)
+		return nil, err
 	}
 
 	var hostKeyCallback ssh.HostKeyCallback
@@ -92,7 +92,7 @@ func sshClientConfig(src config.ResolvedSource) (*ssh.ClientConfig, error) {
 
 	return &ssh.ClientConfig{
 		User:            src.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		Auth:            auth,
 		HostKeyCallback: hostKeyCallback,
 		// Prefer Ed25519 so pinned host_key_fingerprint matches what admins record from ssh-keyscan.
 		HostKeyAlgorithms: []string{
@@ -102,6 +102,24 @@ func sshClientConfig(src config.ResolvedSource) (*ssh.ClientConfig, error) {
 		},
 		Timeout: 30 * time.Second,
 	}, nil
+}
+
+func sshAuthMethods(src config.ResolvedSource) ([]ssh.AuthMethod, error) {
+	var methods []ssh.AuthMethod
+	if pass := strings.TrimSpace(src.ResolvedSSHPassword); pass != "" {
+		methods = append(methods, ssh.Password(pass))
+	}
+	if pem := strings.TrimSpace(src.ResolvedSecret); pem != "" {
+		signer, err := ssh.ParsePrivateKey([]byte(pem))
+		if err != nil {
+			return nil, fmt.Errorf("parse ssh private key: %w", err)
+		}
+		methods = append(methods, ssh.PublicKeys(signer))
+	}
+	if len(methods) == 0 {
+		return nil, fmt.Errorf("source %q: no ssh credentials configured", src.ID)
+	}
+	return methods, nil
 }
 
 func pinnedHostKeyCallback(expected string) ssh.HostKeyCallback {
