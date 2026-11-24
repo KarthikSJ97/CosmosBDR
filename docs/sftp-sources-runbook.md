@@ -189,7 +189,7 @@ Schedules are defined under each source in `sources.yaml`. **`enabled`** is the 
 |--------|-----|
 | List schedules + Cadence state | `GET /api/v1/schedules` |
 | Start cron (runtime) | `POST /api/v1/schedules/{id}/register` |
-| Stop cron (runtime) | `POST /api/v1/schedules/{id}/deregister` |
+| Stop cron (runtime) | `POST /api/v1/schedules/{id}/deregister` (terminates the open Cadence run; an in-flight backup may show “running” briefly until terminate is applied) |
 | Apply YAML `enabled` + cron after editing file | Rebuild/restart app, or `POST /api/v1/schedules/reconcile` with in-memory config (restart still needed today to reload `sources.yaml`) |
 
 ```bash

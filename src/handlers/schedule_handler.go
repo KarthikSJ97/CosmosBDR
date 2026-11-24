@@ -85,7 +85,7 @@ func (h *ScheduleHandler) RegisterSchedule(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
-	if state.Registered && !scheduleNeedsRefresh(sch, state) {
+	if scheduleIdleCronRegistered(state, sch) && !scheduleNeedsRefresh(sch, state) {
 		return c.JSON(types.ScheduleControlResponse{
 			ID:                scheduleID,
 			CadenceWorkflowID: state.CadenceWorkflowID,

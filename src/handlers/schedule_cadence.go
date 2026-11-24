@@ -40,12 +40,15 @@ func describeScheduleRegistration(ctx context.Context, c cadenceClient.Client, s
 	if info.CronSchedule != nil {
 		out.RegisteredCron = *info.CronSchedule
 	}
-	out.Registered = scheduleCronWorkflowOpen(info)
+	out.Registered = workflowExecutionOpen(info)
 	return out, nil
 }
 
-func scheduleCronWorkflowOpen(info *shared.WorkflowExecutionInfo) bool {
-	if info == nil || info.CronSchedule == nil || strings.TrimSpace(*info.CronSchedule) == "" {
+// workflowExecutionOpen reports whether Cadence still has a running execution for the workflow id.
+// Do not require CronSchedule on the run: during an in-flight backup tick Cadence often omits it on
+// the current run, which previously made deregister a no-op while BackupWorkflow was still active.
+func workflowExecutionOpen(info *shared.WorkflowExecutionInfo) bool {
+	if info == nil {
 		return false
 	}
 	return info.CloseStatus == nil
@@ -71,10 +74,11 @@ func RegisterBackupSchedule(ctx context.Context, c cadenceClient.Client, reg *co
 	}
 
 	opts := cadenceClient.StartWorkflowOptions{
-		ID:                           ScheduledBackupWorkflowID(sch.ID),
-		TaskList:                     TaskQueue,
-		CronSchedule:                 sch.Schedule,
-		WorkflowIDReusePolicy:        cadenceClient.WorkflowIDReusePolicyRejectDuplicate,
+		ID:                    ScheduledBackupWorkflowID(sch.ID),
+		TaskList:              TaskQueue,
+		CronSchedule:          sch.Schedule,
+		// RejectDuplicate blocks re-register after terminate/complete (same workflow id).
+		WorkflowIDReusePolicy: cadenceClient.WorkflowIDReusePolicyAllowDuplicateFailedOnly,
 	}
 
 	_, err = StartBackupWorkflow(ctx, c, req, opts)
@@ -100,10 +104,35 @@ func DeregisterBackupSchedule(ctx context.Context, c cadenceClient.Client, sched
 	if err != nil {
 		return err
 	}
-	if !reg.Registered {
+	runID := reg.CadenceRunID
+	err = c.TerminateWorkflow(ctx, wfID, runID, reason, nil)
+	if err == nil {
 		return nil
 	}
-	return c.TerminateWorkflow(ctx, wfID, "", reason, nil)
+	if isTerminateBenign(err) {
+		return nil
+	}
+	// Fallback: latest open run when describe returned a stale run id.
+	if runID != "" {
+		if err2 := c.TerminateWorkflow(ctx, wfID, "", reason, nil); err2 == nil || isTerminateBenign(err2) {
+			return nil
+		}
+	}
+	return err
+}
+
+func isTerminateBenign(err error) bool {
+	if err == nil {
+		return true
+	}
+	if isWorkflowDescribeNotFound(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "completed") ||
+		strings.Contains(msg, "already completed") ||
+		strings.Contains(msg, "not exist") ||
+		strings.Contains(msg, "not found")
 }
 
 func scheduleNeedsRefresh(sch config.ResolvedBackupSchedule, reg scheduleRegistration) bool {
@@ -113,4 +142,16 @@ func scheduleNeedsRefresh(sch config.ResolvedBackupSchedule, reg scheduleRegistr
 	want := strings.TrimSpace(sch.Schedule)
 	got := strings.TrimSpace(reg.RegisteredCron)
 	return got != "" && want != got
+}
+
+// scheduleIdleCronRegistered is true when Cadence has an idle cron parent (not merely an in-flight tick).
+func scheduleIdleCronRegistered(state scheduleRegistration, sch config.ResolvedBackupSchedule) bool {
+	if !state.Registered {
+		return false
+	}
+	got := strings.TrimSpace(state.RegisteredCron)
+	if got == "" {
+		return false
+	}
+	return got == strings.TrimSpace(sch.Schedule)
 }
