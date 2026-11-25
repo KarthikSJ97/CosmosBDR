@@ -5,7 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/yaml.v3"
 )
 
 // LoadSourceRegistry reads, validates, and resolves sources from sources.yaml.
@@ -17,9 +16,14 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 		return nil, fmt.Errorf("read sources config %q: %w", sourcesPath, err)
 	}
 
-	var sourcesFile SourcesFile
-	if err := yaml.Unmarshal(sourcesRaw, &sourcesFile); err != nil {
-		return nil, fmt.Errorf("parse sources config: %w", err)
+	sourcesFile, err := unmarshalSourcesFileStrict(sourcesRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	envRefs := collectSourcesEnvVarNames(sourcesFile)
+	if err := validateSourcesEnvRefs(defaultDotEnvPath, envRefs); err != nil {
+		return nil, err
 	}
 
 	if sourcesFile.Version != 1 {
@@ -36,6 +40,10 @@ func LoadSourceRegistry(cfg *Config) (*SourceRegistry, error) {
 	seenSource := make(map[string]struct{})
 	seenScheduleIDs := make(map[string]string)
 	for i, src := range sourcesFile.Sources {
+		prefixIdx := fmt.Sprintf("sources[%d]", i)
+		if err := validateSourceFieldsForType(prefixIdx, &src); err != nil {
+			return nil, err
+		}
 		if err := validateSource(&src, i); err != nil {
 			return nil, err
 		}

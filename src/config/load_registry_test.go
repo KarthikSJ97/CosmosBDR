@@ -39,6 +39,7 @@ sources:
 }
 
 func TestLoadSourceRegistry_SFTPResolveEnvRefs(t *testing.T) {
+	chdirTempDir(t)
 	t.Setenv("TEST_SFTP_HOST", "10.0.0.5")
 	t.Setenv("TEST_SFTP_USER", "backup")
 	t.Setenv("TEST_SFTP_ROOT", "/data")
@@ -144,6 +145,7 @@ sources:
 }
 
 func TestLoadSourceRegistry_SFTPMissingSecret(t *testing.T) {
+	chdirTempDir(t)
 	dir := t.TempDir()
 	sources := filepath.Join(dir, "sources.yaml")
 	if err := os.WriteFile(sources, []byte(`version: 1
