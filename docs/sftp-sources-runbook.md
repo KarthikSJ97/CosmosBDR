@@ -1,6 +1,6 @@
 # SFTP sources runbook (Docker)
 
-Back up remote files (e.g. Windows OpenSSH) into Seaweed; restore writes back to the same path on the remote (`remote_root` + relative path). Architecture: [multi-source-backup-strategy.md](./multi-source-backup-strategy.md).
+Back up remote files (e.g. Windows OpenSSH) into Seaweed; restore writes back to the same path on the remote (`remote_root` + relative path). Architecture: [Architecture reference](./architecture.md).
 
 CosmosBDR connects with **host, port, user, SSH key, host key fingerprint, remote_root** from `.env` — no app-level tunnel or dial overrides.
 
@@ -33,7 +33,7 @@ If this fails but `ssh` from the **Mac** works, fix Docker/macOS networking (bel
 
 - OpenSSH / SFTP on port **22**; firewall allows private networks.
 - CosmosBDR **public key** for the backup user (Windows admins: `administrators_authorized_keys` when needed).
-- Data under **`remote_root`** (e.g. `D:\Karthik\cosmosbdr_data`).
+- Data under **`remote_root`** (e.g. `D:\data\backups`).
 
 ### Mac — backup SSH key
 
@@ -56,11 +56,11 @@ Use the **ED25519** `SHA256:…` value in `.env` as `<PREFIX>_HOST_KEY_FINGERPRI
 2. Set `HOST_DATA_PATH`, Seaweed/Postgres paths, Cadence/Postgres/Seaweed credentials.
 3. Per SFTP source id (e.g. `win-home-laptop` → `WIN_HOME_LAPTOP_*`): **HOST, USER, REMOTE_ROOT, SSH_KEY, HOST_KEY_FINGERPRINT**.
 4. Commit **`sources.yaml`** only (uses `env:VAR`); keep real IPs/users in `.env`.
-5. Optional **scheduled backups:** under the source, add `schedules` (see [multi-source-backup-strategy.md](./multi-source-backup-strategy.md) §1). Restart `cosmosbdr` after changes; crons appear in Cadence as `scheduled_backup_<schedule_id>`.
+5. Optional **scheduled backups:** under the source, add `schedules` (see [architecture.md](./architecture.md) — configuration model). Restart `cosmosbdr` after changes; crons appear in Cadence as `scheduled_backup_<schedule_id>`.
 
 ### Same remote host: files and DB (recommended)
 
-Use **two `source_id`s** in `sources.yaml` (same `host` / `ssh` / `remote_root` via YAML anchors)—one **without** `pre_backup` for normal files, one **with** `pre_backup` when every job on that id should run a remote hook first (e.g. Tier 2 DB export). The hook runs **once per backup job** (single-file or directory parent), not per file in a tree. Full pattern: [multi-source-backup-strategy.md §2](./multi-source-backup-strategy.md) (“One remote host → multiple `source_id`s”).
+Use **two `source_id`s** in `sources.yaml` (same `host` / `ssh` / `remote_root` via YAML anchors)—one **without** `pre_backup` for normal files, one **with** `pre_backup` when every job on that id should run a remote hook first (e.g. Tier 2 DB export). The hook runs **once per backup job** (single-file or directory parent), not per file in a tree. Full pattern: [architecture.md §2](./architecture.md) (“One remote host → multiple `source_id`s”).
 
 ### Docker Desktop (Mac) — one-time
 
@@ -99,7 +99,7 @@ curl -sS -X POST http://localhost:8080/api/v1/backups \
 
 `flow_type` must be **`BACKUP`**.
 
-**Directory backup (Phase D):** include a `directory` block; `relative_path` is the folder under `remote_root` (use `"."` for all of `remote_root`).
+**Directory backup:** include a `directory` block; `relative_path` is the folder under `remote_root` (use `"."` for all of `remote_root`).
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/backups \
@@ -194,8 +194,8 @@ Schedules are defined under each source in `sources.yaml`. **`enabled`** is the 
 
 ```bash
 curl -sS http://localhost:8080/api/v1/schedules
-curl -sS -X POST "http://localhost:8080/api/v1/schedules/ovhcloud-pg-manual-test/register"
-curl -sS -X POST "http://localhost:8080/api/v1/schedules/ovhcloud-pg-manual-test/deregister"
+curl -sS -X POST "http://localhost:8080/api/v1/schedules/prod-db-pg-nightly/register"
+curl -sS -X POST "http://localhost:8080/api/v1/schedules/prod-db-pg-nightly/deregister"
 curl -sS -X POST http://localhost:8080/api/v1/schedules/reconcile
 ```
 

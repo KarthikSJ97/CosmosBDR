@@ -1,6 +1,6 @@
 # WORM / S3 Object Lock runbook
 
-Seaweed **COMPLIANCE** object lock (Phase I). Architecture context: [§6 in multi-source-backup-strategy.md](./multi-source-backup-strategy.md).
+Seaweed **COMPLIANCE** object lock for backup chunks and manifests. Background: [retention & WORM](architecture.md#worm--object-immutability) in the architecture reference.
 
 ---
 
@@ -53,11 +53,65 @@ go test -tags=integration -count=1 -v ./src/storage/ -run 'TestWORM'
 
 Tests create a **disposable** lock-enabled bucket, upload with COMPLIANCE, and assert **delete is blocked** before `retain_until`.
 
+![TestWORM integration tests passing](images/worm-integration-test-pass.png)
+
+---
+
+## Manual S3 delete (production chunk)
+
+After at least one locked backup, Postgres stores `chunks.seaweed_key` and `chunks.seaweed_version_id`. A versioned **S3** `DELETE` must return **`403 AccessDenied`** while `retain_until` is in the future.
+
+![curl DELETE with VersionId — AccessDenied](images/worm-s3-delete-access-denied.png)
+
+**Do not treat HTTP 204 as a WORM success** — that usually means delete without a valid `versionId`, a delete marker, or a stale id. The proof is **`403` + `AccessDenied`**.
+
+`psql -At` prints columns separated by **`|`** (pipe). Split on `|`, do not use bare `read` with default IFS.
+
+```bash
+cd /path/to/CosmosBDR
+# Set SEAWEED_* from your secret store — do not paste real keys into docs/screenshots.
+export SEAWEED_ENDPOINT="${SEAWEED_ENDPOINT:-http://localhost:8333}"
+export SEAWEED_BUCKET="${SEAWEED_BUCKET:-cosmosbdr}"
+export SEAWEED_ACCESS_KEY="…"
+export SEAWEED_SECRET_KEY="…"
+export AWS_DEFAULT_REGION="${SEAWEED_REGION:-us-east-1}"
+
+ROW=$(docker exec cosmosbdr_postgres psql -U postgres -d cosmosbdr -At -c \
+  "SELECT seaweed_key, seaweed_version_id
+   FROM chunks
+   WHERE retain_until > now() AND coalesce(seaweed_version_id,'') <> ''
+   ORDER BY created_at DESC LIMIT 1;")
+
+OBJECT_KEY=${ROW%%|*}
+VERSION_ID=${ROW#*|}
+
+if [ -z "$VERSION_ID" ] || [ -z "$OBJECT_KEY" ]; then
+  echo "No locked chunk row — run a WORM backup first"
+  exit 1
+fi
+
+ENC_KEY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${OBJECT_KEY}''', safe='/'))")
+
+curl -sS -w "\nHTTP_CODE:%{http_code}\n" \
+  --aws-sigv4 "aws:amz:${AWS_DEFAULT_REGION}:s3" \
+  --user "${SEAWEED_ACCESS_KEY}:${SEAWEED_SECRET_KEY}" \
+  -X DELETE \
+  "${SEAWEED_ENDPOINT}/${SEAWEED_BUCKET}/${ENC_KEY}?versionId=${VERSION_ID}"
+```
+
+Sanity counts:
+
+```bash
+docker exec cosmosbdr_postgres psql -U postgres -d cosmosbdr -c "
+SELECT count(*) FILTER (WHERE retain_until > now() AND coalesce(seaweed_version_id,'') <> '') AS curl_ready
+FROM chunks;"
+```
+
 ---
 
 ## Volume migration (object lock)
 
-**Status: done** for this deployment — Seaweed data is on a host bind mount (`SEAWEED_DATA_PATH`). When cutting over from named Docker volumes:
+When Seaweed uses a host bind mount (`SEAWEED_DATA_PATH`) and you are cutting over from named Docker volumes:
 
 - **Fresh start:** wipe volume / empty host dir, recreate bucket with lock on first app start, re-run backups.
 - **Keep chunks:** copy volume data to the bind mount **before** cutover; if the old bucket was not lock-enabled, plan a bucket recreate (same as enable step 3).
@@ -66,20 +120,22 @@ Postgres metadata and Seaweed paths must stay consistent.
 
 ---
 
-## Deferred (not required now)
+## Limits of this release
 
-| Item | Note |
-|------|------|
-| **Split S3 credentials** (writer vs GC deleter) | Single app identity today; split only when compliance demands least privilege. |
-| **TTL → lock reconciliation job** | Changing `ttl_days` does not rewrite past `retain_until`; see §6 table. |
-| **3-2-1 off-host copy** | Still required for real DR; WORM is not a second site. |
+| Topic | What to expect |
+|-------|----------------|
+| **S3 credentials** | One app identity for upload and GC; split writer/deleter roles is not configured separately. |
+| **TTL changes** | Editing `ttl_days` does not rewrite `retain_until` on objects already uploaded. |
+| **DR scope** | WORM protects blobs on this store; **3-2-1 off-host copy** is still required for site loss. |
 
 ---
 
-## Phase I verification checklist
+## Verification (production)
 
-- [ ] Bucket created with object lock + versioning (app log line on first start).
-- [ ] Backup completes; filer shows `chunks/...` and `snapshots/.../manifest.json` with `.versions/`.
-- [ ] Postgres: `chunks.seaweed_version_id`, `chunks.retain_until`; item metadata `manifest_version_id`, `manifest_retain_until`.
-- [ ] S3 versioned delete **blocked** before `retain_until` (`TestWORM` or S3 API with `--version-id` — **not** filer trash).
-- [ ] `go test -tags=integration ... -run TestWORM` passes with `SEAWEED_INTEGRATION=1`.
+After enable and at least one locked backup:
+
+1. Bucket created with object lock + versioning (app log on first start).
+2. Backup completes; filer shows `chunks/...` and `snapshots/.../manifest.json` with `.versions/`.
+3. Postgres: `chunks.seaweed_version_id`, `chunks.retain_until`; item metadata includes manifest lock fields where applicable.
+4. S3 versioned delete **blocked** before `retain_until` ([integration test](#automated-integration-tests) or [manual DELETE](#manual-s3-delete-production-chunk) — **not** filer trash).
+5. `go test -tags=integration ... -run TestWORM` passes with `SEAWEED_INTEGRATION=1` when validating the stack.
