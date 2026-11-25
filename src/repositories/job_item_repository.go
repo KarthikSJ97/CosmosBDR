@@ -230,6 +230,40 @@ func (r *JobItemRepository) CloneChunksFromItem(ctx context.Context, historicalI
 	return nil
 }
 
+// MergeJobItemManifestMetadata adds manifest DR location (and WORM ids) onto a job item's metadata.
+func (r *JobItemRepository) MergeJobItemManifestMetadata(ctx context.Context, itemID string, manifestKey, manifestVersionID string, manifestRetainUntil time.Time) error {
+	item, err := r.GetJobItemByID(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	if item == nil {
+		return fmt.Errorf("job item not found: %s", itemID)
+	}
+	var meta types.ItemMetadata
+	if len(item.ItemMetadata) > 0 {
+		if err := json.Unmarshal(item.ItemMetadata, &meta); err != nil {
+			return fmt.Errorf("unmarshal item metadata: %w", err)
+		}
+	}
+	meta.ManifestKey = manifestKey
+	if manifestVersionID != "" {
+		meta.ManifestVersionID = manifestVersionID
+	}
+	if !manifestRetainUntil.IsZero() {
+		meta.ManifestRetainUntil = manifestRetainUntil.UTC()
+	}
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal item metadata: %w", err)
+	}
+	res := r.DB.WithContext(ctx).Model(&schema.JobItem{}).Where("id = ?", itemID).
+		Update("item_metadata", datatypes.JSON(metaBytes))
+	if res.Error != nil {
+		return fmt.Errorf("update manifest metadata: %w", res.Error)
+	}
+	return nil
+}
+
 // UpdateSkippedBackupItemProof persists DR manifest location and skip proof on an unchanged backup run.
 func (r *JobItemRepository) UpdateSkippedBackupItemProof(ctx context.Context, itemID string, metadata datatypes.JSON) error {
 	err := r.DB.WithContext(ctx).Model(&schema.JobItem{}).

@@ -43,13 +43,14 @@ func (ja *JobActivities) RetentionGCActivity(ctx context.Context, input types.Re
 				break
 			}
 			for i := range items {
-				n, m, c, err := ja.purgeExpiredSnapshot(ctx, &items[i])
+				n, m, c, skipped, err := ja.purgeExpiredSnapshot(ctx, &items[i], asOf)
 				if err != nil {
 					return resp, fmt.Errorf("purge snapshot %s (source %s): %w", items[i].ID, src.SourceID, err)
 				}
 				resp.ExpiredItemsDeleted += n
 				resp.ManifestsDeleted += m
 				resp.ChunksDeleted += c
+				resp.BlobsSkippedObjectLock += skipped
 			}
 			if len(items) < itemBatch {
 				break
@@ -66,11 +67,18 @@ func (ja *JobActivities) RetentionGCActivity(ctx context.Context, input types.Re
 			break
 		}
 		for _, ch := range orphans {
-			if err := ja.deleteChunkBlobAndRow(ctx, &ch); err != nil {
+			deleted, skipped, err := ja.deleteChunkBlobAndRow(ctx, &ch, asOf)
+			if err != nil {
 				return resp, fmt.Errorf("delete orphan chunk %s: %w", ch.ID, err)
 			}
-			resp.OrphanChunksDeleted++
-			resp.ChunksDeleted++
+			if skipped {
+				resp.BlobsSkippedObjectLock++
+				continue
+			}
+			if deleted {
+				resp.OrphanChunksDeleted++
+				resp.ChunksDeleted++
+			}
 		}
 		if len(orphans) < orphanBatch {
 			break
@@ -80,78 +88,140 @@ func (ja *JobActivities) RetentionGCActivity(ctx context.Context, input types.Re
 	return resp, nil
 }
 
-func (ja *JobActivities) purgeExpiredSnapshot(ctx context.Context, item *schema.JobItem) (itemsDeleted, manifestsDeleted, chunksDeleted int, err error) {
-	chunkIDs, err := ja.JobItemRepo.ChunkIDsForItem(ctx, item.ID)
-	if err != nil {
-		return 0, 0, 0, err
+func (ja *JobActivities) purgeExpiredSnapshot(ctx context.Context, item *schema.JobItem, asOf time.Time) (itemsDeleted, manifestsDeleted, chunksDeleted, skipped int, err error) {
+	manifestMeta := manifestMetaFromJobItem(item)
+	if retainUntilActive(manifestMeta.RetainUntil, asOf) {
+		return 0, 0, 0, 1, nil
 	}
 
-	if key := manifestKeyFromJobItem(item); key != "" {
-		if ja.Seaweed != nil {
-			if err := ja.Seaweed.DeleteObject(ctx, key); err != nil {
-				return 0, 0, 0, err
-			}
+	chunkIDs, err := ja.JobItemRepo.ChunkIDsForItem(ctx, item.ID)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+
+	if manifestMeta.Key != "" {
+		deleted, blocked, err := ja.deleteSeaweedObject(ctx, manifestMeta.Key, manifestMeta.VersionID, manifestMeta.RetainUntil, asOf)
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+		if blocked || !deleted {
+			return 0, 0, 0, 1, nil
 		}
 		manifestsDeleted = 1
 	}
 
 	if err := ja.JobItemRepo.HardDeleteJobItem(ctx, item.ID); err != nil {
-		return 0, manifestsDeleted, 0, err
+		return 0, manifestsDeleted, 0, 0, err
 	}
 	itemsDeleted = 1
 
 	for _, chunkID := range chunkIDs {
-		deleted, err := ja.tryDeleteUnreferencedChunk(ctx, chunkID)
+		del, skip, err := ja.tryDeleteUnreferencedChunk(ctx, chunkID, asOf)
 		if err != nil {
-			return itemsDeleted, manifestsDeleted, chunksDeleted, err
+			return itemsDeleted, manifestsDeleted, chunksDeleted, skipped, err
 		}
-		if deleted {
+		if skip {
+			skipped++
+		}
+		if del {
 			chunksDeleted++
 		}
 	}
-	return itemsDeleted, manifestsDeleted, chunksDeleted, nil
+	return itemsDeleted, manifestsDeleted, chunksDeleted, skipped, nil
 }
 
-func (ja *JobActivities) tryDeleteUnreferencedChunk(ctx context.Context, chunkID string) (bool, error) {
+func (ja *JobActivities) tryDeleteUnreferencedChunk(ctx context.Context, chunkID string, asOf time.Time) (deleted bool, skipped bool, err error) {
 	count, err := ja.ChunkRepo.CountItemChunkReferences(ctx, chunkID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if count > 0 {
-		return false, nil
+		return false, false, nil
 	}
 	chunk, err := ja.ChunkRepo.GetChunkByID(ctx, chunkID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if chunk == nil {
-		return false, nil
+		return false, false, nil
 	}
-	if err := ja.deleteChunkBlobAndRow(ctx, chunk); err != nil {
-		return false, err
-	}
-	return true, nil
+	return ja.deleteChunkBlobAndRow(ctx, chunk, asOf)
 }
 
-func (ja *JobActivities) deleteChunkBlobAndRow(ctx context.Context, chunk *schema.Chunk) error {
+func (ja *JobActivities) deleteChunkBlobAndRow(ctx context.Context, chunk *schema.Chunk, asOf time.Time) (deleted bool, skipped bool, err error) {
 	if chunk == nil {
-		return nil
+		return false, false, nil
+	}
+	if retainUntilActive(chunkRetainUntil(chunk), asOf) {
+		return false, true, nil
 	}
 	if ja.Seaweed != nil && strings.TrimSpace(chunk.SeaweedKey) != "" {
-		if err := ja.Seaweed.DeleteObject(ctx, chunk.SeaweedKey); err != nil {
-			return err
+		del, blocked, err := ja.deleteSeaweedObject(ctx, chunk.SeaweedKey, chunk.SeaweedVersionID, chunkRetainUntil(chunk), asOf)
+		if err != nil {
+			return false, false, err
+		}
+		if blocked {
+			return false, true, nil
+		}
+		if !del {
+			return false, true, nil
 		}
 	}
-	return ja.ChunkRepo.DeleteChunkRow(ctx, chunk.ID)
+	if err := ja.ChunkRepo.DeleteChunkRow(ctx, chunk.ID); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
 }
 
-func manifestKeyFromJobItem(item *schema.JobItem) string {
+func (ja *JobActivities) deleteSeaweedObject(ctx context.Context, key, versionID string, retainUntil time.Time, asOf time.Time) (deleted bool, blocked bool, err error) {
+	if ja.Seaweed == nil {
+		return true, false, nil
+	}
+	if retainUntilActive(retainUntil, asOf) {
+		return false, false, nil
+	}
+	outcome, err := ja.Seaweed.DeleteObjectVersion(ctx, key, versionID)
+	if err != nil {
+		return false, false, err
+	}
+	if outcome.Blocked {
+		return false, true, nil
+	}
+	return outcome.Deleted, false, nil
+}
+
+func retainUntilActive(retainUntil, asOf time.Time) bool {
+	return !retainUntil.IsZero() && asOf.Before(retainUntil.UTC())
+}
+
+func chunkRetainUntil(chunk *schema.Chunk) time.Time {
+	if chunk == nil || chunk.RetainUntil == nil {
+		return time.Time{}
+	}
+	return chunk.RetainUntil.UTC()
+}
+
+type manifestObjectMeta struct {
+	Key         string
+	VersionID   string
+	RetainUntil time.Time
+}
+
+func manifestMetaFromJobItem(item *schema.JobItem) manifestObjectMeta {
 	if item == nil || len(item.ItemMetadata) == 0 {
-		return ""
+		return manifestObjectMeta{}
 	}
 	var meta types.ItemMetadata
 	if err := json.Unmarshal(item.ItemMetadata, &meta); err != nil {
-		return ""
+		return manifestObjectMeta{}
 	}
-	return strings.TrimSpace(meta.ManifestKey)
+	return manifestObjectMeta{
+		Key:         strings.TrimSpace(meta.ManifestKey),
+		VersionID:   strings.TrimSpace(meta.ManifestVersionID),
+		RetainUntil: meta.ManifestRetainUntil.UTC(),
+	}
+}
+
+func manifestKeyFromJobItem(item *schema.JobItem) string {
+	return manifestMetaFromJobItem(item).Key
 }

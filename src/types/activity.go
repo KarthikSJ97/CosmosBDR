@@ -11,7 +11,9 @@ type ItemMetadata struct {
 	FingerprintAlg string    `json:"fingerprint_alg"` // e.g., "sha256"
 	BackupOutcome  string    `json:"backup_outcome,omitempty"` // e.g. "unchanged"
 	SkipReason     string    `json:"skip_reason,omitempty"`
-	ManifestKey    string    `json:"manifest_key,omitempty"`
+	ManifestKey           string    `json:"manifest_key,omitempty"`
+	ManifestVersionID     string    `json:"manifest_version_id,omitempty"`
+	ManifestRetainUntil   time.Time `json:"manifest_retain_until,omitempty"`
 }
 
 // CadenceRuntimeLimits is resolved on the worker from server config (not API input).
@@ -109,8 +111,10 @@ type PublishSnapshotManifestRequest struct {
 }
 
 type PublishSnapshotManifestResponse struct {
-	ItemID      string `json:"item_id"`
-	ManifestKey string `json:"manifest_key"`
+	ItemID              string    `json:"item_id"`
+	ManifestKey         string    `json:"manifest_key"`
+	ManifestVersionID   string    `json:"manifest_version_id,omitempty"`
+	ManifestRetainUntil time.Time `json:"manifest_retain_until,omitempty"`
 }
 
 type CompleteJobItemResponse struct {
@@ -197,8 +201,9 @@ type RetentionGCRequest struct {
 
 // RetentionGCResponse summarizes one retention GC activity run.
 type RetentionGCResponse struct {
-	ExpiredItemsDeleted  int `json:"expired_items_deleted"`
-	ManifestsDeleted     int `json:"manifests_deleted"`
-	ChunksDeleted        int `json:"chunks_deleted"`
-	OrphanChunksDeleted  int `json:"orphan_chunks_deleted"`
+	ExpiredItemsDeleted   int `json:"expired_items_deleted"`
+	ManifestsDeleted      int `json:"manifests_deleted"`
+	ChunksDeleted         int `json:"chunks_deleted"`
+	OrphanChunksDeleted   int `json:"orphan_chunks_deleted"`
+	BlobsSkippedObjectLock int `json:"blobs_skipped_object_lock"`
 }

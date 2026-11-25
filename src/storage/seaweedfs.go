@@ -5,24 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // SeaweedClient wraps the S3 client configured for SeaweedFS
 type SeaweedClient struct {
-	Client *s3.Client
-	Bucket string
+	Client              *s3.Client
+	Bucket              string
+	ObjectLockEnabled   bool
 }
 
 // InitSeaweedFS initializes an S3 client pointing to the SeaweedFS S3 endpoint using modern service-specific endpoints
-func InitSeaweedFS(endpoint, region, accessKey, secretKey, bucket string) (*SeaweedClient, error) {
+func InitSeaweedFS(endpoint, region, accessKey, secretKey, bucket string, objectLockEnabled bool) (*SeaweedClient, error) {
 	ctx := context.TODO()
 
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
@@ -40,8 +41,9 @@ func InitSeaweedFS(endpoint, region, accessKey, secretKey, bucket string) (*Seaw
 	})
 
 	client := &SeaweedClient{
-		Client: s3Client,
-		Bucket: bucket,
+		Client:            s3Client,
+		Bucket:            bucket,
+		ObjectLockEnabled: objectLockEnabled,
 	}
 
 	if err := client.EnsureBucket(ctx); err != nil {
@@ -64,6 +66,9 @@ func (c *SeaweedClient) EnsureBucket(ctx context.Context) error {
 	})
 	if err == nil {
 		log.Printf("SeaweedFS bucket %q is available", c.Bucket)
+		if c.ObjectLockEnabled {
+			log.Printf("WARNING: SeaweedFS bucket %q already exists — if it was created without object lock, locked PutObject uploads will fail until you delete the bucket (or reset Seaweed data) and restart so EnsureBucket can recreate it with lock+versioning", c.Bucket)
+		}
 		return nil
 	}
 	if !isBucketMissing(err) {
@@ -71,11 +76,19 @@ func (c *SeaweedClient) EnsureBucket(ctx context.Context) error {
 	}
 
 	log.Printf("SeaweedFS bucket %q not found, creating...", c.Bucket)
-	_, err = c.Client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: aws.String(c.Bucket),
-	})
+	createIn := &s3.CreateBucketInput{Bucket: aws.String(c.Bucket)}
+	if c.ObjectLockEnabled {
+		createIn.ObjectLockEnabledForBucket = aws.Bool(true)
+	}
+	_, err = c.Client.CreateBucket(ctx, createIn)
 	if err == nil {
 		log.Printf("SeaweedFS bucket %q created", c.Bucket)
+		if c.ObjectLockEnabled {
+			if verr := c.enableBucketVersioning(ctx); verr != nil {
+				return fmt.Errorf("enable versioning on %q: %w", c.Bucket, verr)
+			}
+			log.Printf("SeaweedFS bucket %q: object lock + versioning enabled", c.Bucket)
+		}
 		return nil
 	}
 	if isBucketAlreadyExists(err) {
@@ -100,21 +113,25 @@ func isBucketMissing(err error) bool {
 	return false
 }
 
-// DeleteObject removes one object from the configured bucket. Missing keys are treated as success.
-func (c *SeaweedClient) DeleteObject(ctx context.Context, objectKey string) error {
-	if c == nil || c.Client == nil {
-		return fmt.Errorf("seaweed client is not initialized")
-	}
-	objectKey = strings.TrimSpace(objectKey)
-	if objectKey == "" {
-		return nil
-	}
-	_, err := c.Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+func (c *SeaweedClient) enableBucketVersioning(ctx context.Context) error {
+	_, err := c.Client.PutBucketVersioning(ctx, &s3.PutBucketVersioningInput{
 		Bucket: aws.String(c.Bucket),
-		Key:    aws.String(objectKey),
+		VersioningConfiguration: &types.VersioningConfiguration{
+			Status: types.BucketVersioningStatusEnabled,
+		},
 	})
-	if err != nil && !isObjectMissing(err) {
-		return fmt.Errorf("delete SeaweedFS object %q: %w", objectKey, err)
+	return err
+}
+
+// DeleteObject removes one object from the configured bucket. Missing keys are treated as success.
+// When versionID is non-empty, deletes that version (required for WORM buckets).
+func (c *SeaweedClient) DeleteObject(ctx context.Context, objectKey, versionID string) error {
+	outcome, err := c.DeleteObjectVersion(ctx, objectKey, versionID)
+	if err != nil {
+		return err
+	}
+	if outcome.Blocked {
+		return fmt.Errorf("delete SeaweedFS object %q: access denied (object lock)", objectKey)
 	}
 	return nil
 }

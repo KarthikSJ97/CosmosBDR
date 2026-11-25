@@ -53,9 +53,13 @@ func main() {
 		cfg.SeaweedAccessKey,
 		cfg.SeaweedSecretKey,
 		cfg.SeaweedBucket,
+		cfg.SeaweedObjectLockEnabled,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize SeaweedFS storage: %v", err)
+	}
+	if cfg.SeaweedObjectLockEnabled {
+		log.Printf("Seaweed WORM: S3 object lock enabled (COMPLIANCE retain_until = snapshot + source ttl_days)")
 	}
 
 	// 4. Initialize Cadence Client[cite: 1]
@@ -87,6 +91,7 @@ func main() {
 		Seaweed:                              seaweedClient,
 		ChunkCodec:                           chunkCodec,
 		Registry:                             sourceRegistry,
+		SeaweedObjectLockEnabled:             cfg.SeaweedObjectLockEnabled,
 		CadenceMaxConcurrentWorkflows:        cfg.EffectiveCadenceMaxConcurrentWorkflows(),
 		CadenceWorkerMaxConcurrentActivities: cfg.EffectiveCadenceWorkerMaxConcurrentActivities(),
 		RetentionGCItemBatchSize:             cfg.EffectiveRetentionGCItemBatchSize(),

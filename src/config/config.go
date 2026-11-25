@@ -26,7 +26,8 @@ type Config struct {
 	SeaweedRegion    string
 	SeaweedAccessKey string
 	SeaweedSecretKey string
-	SeaweedBucket    string
+	SeaweedBucket            string
+	SeaweedObjectLockEnabled bool
 
 	// Cadence workflow orchestartor
 	CadenceGRPCHost string
@@ -76,7 +77,8 @@ func LoadConfig() *Config {
 		SeaweedRegion:    getEnvString("SEAWEED_REGION", "region"),
 		SeaweedAccessKey: getEnvString("SEAWEED_ACCESS_KEY", "dummy"),
 		SeaweedSecretKey: getEnvString("SEAWEED_SECRET_KEY", "dummy"),
-		SeaweedBucket:    getEnvString("SEAWEED_BUCKET", "cosmosbdr"),
+		SeaweedBucket:            getEnvString("SEAWEED_BUCKET", "cosmosbdr"),
+		SeaweedObjectLockEnabled: getEnvBool("SEAWEED_OBJECT_LOCK_ENABLED", true),
 
 		// Cadence workflow orchestartor
 		CadenceGRPCHost: getEnvString("CADENCE_GRPC_HOST", "localhost"),

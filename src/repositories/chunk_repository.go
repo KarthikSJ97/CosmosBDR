@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"cosmosbdr/src/db/schema"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -96,6 +99,21 @@ func (r *ChunkRepository) GetChunkByID(ctx context.Context, chunkID string) (*sc
 		return nil, fmt.Errorf("load chunk %s: %w", chunkID, err)
 	}
 	return &chunk, nil
+}
+
+// UpdateChunkRetainUntil stores WORM metadata after upload or retention extension.
+func (r *ChunkRepository) UpdateChunkRetainUntil(ctx context.Context, chunkID string, retainUntil time.Time, versionID string) error {
+	updates := map[string]interface{}{
+		"retain_until": retainUntil.UTC(),
+	}
+	if versionID != "" {
+		updates["seaweed_version_id"] = versionID
+	}
+	res := r.DB.WithContext(ctx).Model(&schema.Chunk{}).Where("id = ?", chunkID).Updates(updates)
+	if res.Error != nil {
+		return fmt.Errorf("update chunk %s retain_until: %w", chunkID, res.Error)
+	}
+	return nil
 }
 
 // DeleteChunkRow hard-deletes a chunks row (caller must ensure no item_chunks reference it).

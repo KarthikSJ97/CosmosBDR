@@ -4,27 +4,31 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/manifest"
 	"cosmosbdr/src/types"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+type publishedManifest struct {
+	Key         string
+	VersionID   string
+	RetainUntil time.Time
+}
 
 // publishSnapshotManifest writes snapshots/<time>__<itemID>/manifest.json for manual / DR restore.
 // fileChecksum may be empty when the job item already carries a checksum (e.g. dedup skip).
-func (ja *JobActivities) publishSnapshotManifest(ctx context.Context, item *schema.JobItem, filePrefix, fileChecksum string) (string, error) {
+func (ja *JobActivities) publishSnapshotManifest(ctx context.Context, item *schema.JobItem, filePrefix, fileChecksum, sourceID string) (publishedManifest, error) {
 	if filePrefix == "" {
-		return "", fmt.Errorf("file prefix is required for snapshot manifest")
+		return publishedManifest{}, fmt.Errorf("file prefix is required for snapshot manifest")
 	}
 	if item == nil || item.ID == "" {
-		return "", fmt.Errorf("job item is required for snapshot manifest")
+		return publishedManifest{}, fmt.Errorf("job item is required for snapshot manifest")
 	}
 	if ja.Seaweed == nil || ja.Seaweed.Client == nil {
-		return "", fmt.Errorf("seaweed client is not initialized")
+		return publishedManifest{}, fmt.Errorf("seaweed client is not initialized")
 	}
 
 	checksum := fileChecksum
@@ -35,13 +39,13 @@ func (ja *JobActivities) publishSnapshotManifest(ctx context.Context, item *sche
 		var err error
 		checksum, err = ja.hashJobItem(ctx, item.ItemPath, item.BackupKey, "")
 		if err != nil {
-			return "", fmt.Errorf("file checksum for manifest: %w", err)
+			return publishedManifest{}, fmt.Errorf("file checksum for manifest: %w", err)
 		}
 	}
 
 	rows, err := ja.ChunkRepo.ListItemChunksWithStorage(ctx, item.ID)
 	if err != nil {
-		return "", err
+		return publishedManifest{}, err
 	}
 
 	inputs := make([]manifest.ChunkInput, len(rows))
@@ -59,28 +63,34 @@ func (ja *JobActivities) publishSnapshotManifest(ctx context.Context, item *sche
 		ChunkSizeBytes:     manifest.ChunkSizeBytes,
 	})
 	if err != nil {
-		return "", fmt.Errorf("build snapshot manifest: %w", err)
+		return publishedManifest{}, fmt.Errorf("build snapshot manifest: %w", err)
 	}
 
 	body, err := snap.MarshalJSONBytes()
 	if err != nil {
-		return "", fmt.Errorf("marshal snapshot manifest: %w", err)
+		return publishedManifest{}, fmt.Errorf("marshal snapshot manifest: %w", err)
 	}
 
 	folder := manifest.SnapshotFolderName(item.ID, backedUpAt)
 	objectKey := manifest.SnapshotObjectKey(filePrefix, folder)
 
-	_, err = ja.Seaweed.Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(ja.Seaweed.Bucket),
-		Key:         aws.String(objectKey),
-		Body:        bytes.NewReader(body),
-		ContentType: aws.String("application/json"),
-	})
-	if err != nil {
-		return "", fmt.Errorf("upload snapshot manifest to %s: %w", objectKey, err)
+	var pub publishedManifest
+	pub.Key = objectKey
+	retainUntil := ja.retainUntilForSource(sourceID, backedUpAt)
+	if ja.sourceObjectLockEnabled(sourceID) {
+		putRes, err := ja.Seaweed.PutObjectLocked(ctx, objectKey, body, "application/json", retainUntil)
+		if err != nil {
+			return publishedManifest{}, fmt.Errorf("upload snapshot manifest to %s: %w", objectKey, err)
+		}
+		pub.VersionID = putRes.VersionID
+		pub.RetainUntil = putRes.RetainUntil
+	} else {
+		if err := ja.Seaweed.PutObjectPlain(ctx, objectKey, bytes.NewReader(body), "application/json"); err != nil {
+			return publishedManifest{}, fmt.Errorf("upload snapshot manifest to %s: %w", objectKey, err)
+		}
 	}
 
-	return objectKey, nil
+	return pub, nil
 }
 
 func (ja *JobActivities) PublishSnapshotManifestActivity(ctx context.Context, input types.PublishSnapshotManifestRequest) (types.PublishSnapshotManifestResponse, error) {
@@ -103,13 +113,23 @@ func (ja *JobActivities) PublishSnapshotManifestActivity(ctx context.Context, in
 	if err != nil {
 		return types.PublishSnapshotManifestResponse{}, fmt.Errorf("seaweed object prefix: %w", err)
 	}
-	key, err := ja.publishSnapshotManifest(ctx, item, filePrefix, "")
+	sourceID, _, err := config.ParseBackupKey(item.BackupKey)
+	if err != nil {
+		sourceID = ""
+	}
+	pub, err := ja.publishSnapshotManifest(ctx, item, filePrefix, "", sourceID)
 	if err != nil {
 		return types.PublishSnapshotManifestResponse{}, err
 	}
 
+	if err := ja.JobItemRepo.MergeJobItemManifestMetadata(ctx, input.ItemID, pub.Key, pub.VersionID, pub.RetainUntil); err != nil {
+		return types.PublishSnapshotManifestResponse{}, err
+	}
+
 	return types.PublishSnapshotManifestResponse{
-		ItemID:      input.ItemID,
-		ManifestKey: key,
+		ItemID:              input.ItemID,
+		ManifestKey:         pub.Key,
+		ManifestVersionID:   pub.VersionID,
+		ManifestRetainUntil: pub.RetainUntil,
 	}, nil
 }

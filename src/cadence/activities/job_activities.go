@@ -15,6 +15,8 @@ type JobActivities struct {
 	ChunkCodec  *chunkcodec.Codec
 	Registry    *config.SourceRegistry
 
+	SeaweedObjectLockEnabled bool
+
 	CadenceMaxConcurrentWorkflows        int
 	CadenceWorkerMaxConcurrentActivities int
 

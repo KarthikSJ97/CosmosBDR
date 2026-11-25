@@ -36,7 +36,9 @@ func (ja *JobActivities) FinalizeSkippedBackupItemActivity(ctx context.Context, 
 
 	meta.BackupOutcome = "unchanged"
 	meta.SkipReason = input.SkipReason
-	meta.ManifestKey = input.ManifestKey
+	if input.ManifestKey != "" {
+		meta.ManifestKey = input.ManifestKey
+	}
 
 	metaBytes, err := json.Marshal(meta)
 	if err != nil {

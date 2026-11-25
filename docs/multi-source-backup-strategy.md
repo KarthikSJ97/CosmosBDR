@@ -122,7 +122,7 @@ Most engines ship **dump tools**, not **scheduled dumps**. Production teams use 
 | **Customer**  | Scheduled dump on the DB host (`pg_dump`, `mysqldump`, custom script, SQL Agent) → stable path under `remote_root` (e.g. `backups/postgres/latest.dump`, often a `latest` symlink). |
 | **CosmosBDR** | `type: sftp` + schedule or API on `relative_path` → `InspectFile` → chunks → Seaweed.                                                                                               |
 
-**Operational rule:** run dump **before** Cosmos schedule (e.g. dump 01:00, backup 02:00). Ship **reference scripts** in-repo (`scripts/dump/`*) as copy/install helpers—Cosmos does not execute them in Tier 1.
+**Operational rule:** run dump **before** Cosmos schedule (e.g. dump 01:00, backup 02:00). Cosmos does not run customer dump tooling in Tier 1—it only SFTP-backs up the artifact at `relative_path`.
 
 **Risk — stale file + SKIP:** if tonight’s dump fails and the file is unchanged, `InspectFile` may **SKIP** on mtime/hash. Mitigation (**Phase H.1**): optional source-level `dump_freshness` — list `relative_paths` + `max_age_hours`; inspect **fails** when mtime is older than the window (no silent SKIP).
 
@@ -260,7 +260,7 @@ sources:
 
 #### Phase H implementation order (locked)
 
-1. Docs + reference dump scripts (**Tier 1**).
+1. Docs for Tier 1 (customer-scheduled dump + SFTP).
 2. `RunPreBackupActivity`: SSH exec + `command` / `env_refs` only (no code presets).
 3. `dump_freshness` / stale artifact guard (H.1).
 4. Parent-level hook for `DirectoryBackupWorkflow`.
@@ -440,9 +440,11 @@ Two lifecycles:
 
 `RetentionGCWorkflow`**:** daily Cadence cron, separate from backup; applies per-source TTL from config loaded at startup.
 
-### WORM / object immutability (optional — not implemented)
+### WORM / object immutability (optional — Phase I)
 
-**Today:** TTL + refcount GC (Phase F) is **application-driven delete** after `ttl_days`. Credentials that can reach Seaweed can still delete blobs early unless storage enforces immutability.
+**When disabled (default):** TTL + refcount GC (Phase F) is **application-driven delete** after `ttl_days`. Credentials that can reach Seaweed can still delete blobs early unless storage enforces immutability.
+
+**When enabled:** set `SEAWEED_OBJECT_LOCK_ENABLED=true` (and use a **new** bucket created with object lock + versioning). Uploads use S3 **COMPLIANCE** `retain_until = snapshot_time + source.ttl_days`; deduped chunks get retention extended via `PutObjectRetention`. Retention GC deletes versioned objects only after app TTL **and** `retain_until`; `AccessDenied` from lock is counted as `blobs_skipped_object_lock`.
 
 **WORM (write-once-read-many)** adds a **storage-layer** rule: chunk/manifest objects cannot be deleted or overwritten until `retain_until`, even if an attacker has app or S3 credentials.
 
@@ -717,6 +719,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | DB backup strategy  | locked  | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type                                                                                                          |
 | Phase H             | done    | `pre_backup` on `sftp`, `RunPreBackupActivity`, YAML `command`/`env_refs`, `output`, `cleanup_after`, parent-level for directory jobs                                                                 |
 | Phase H.1           | done    | `dump_freshness` in sources.yaml → fail inspect when mtime too old                                                                                                                                   |
+| Phase I             | done    | `SEAWEED_OBJECT_LOCK_ENABLED`; COMPLIANCE uploads; chunk `seaweed_version_id` / `retain_until`; GC version delete + skip on lock                                                                     |
 
 ---
 
@@ -726,7 +729,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | **Where backups live** | All chunk/manifest storage in **Seaweed** on the **local host** running the server (`SEAWEED_DATA_PATH` bind mount).                                                                                                                                                           | Ingest from local mount or remote SFTP; durability is always central Seaweed + Postgres on this host.        |
 | **Restore default**    | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. Directory restore fans out the same per-file path.                                                                                 | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type.                      |
-| **WORM vs TTL**        | **No WORM** for v1. **TTL per source** in `sources.yaml`. After TTL, delete **version metadata** and **physically remove** Seaweed objects / chunk rows that are **no longer referenced**.                                                                                     | Phase F implements refcount-safe GC; deduped chunks shared with newer backups are never deleted early.       |
+| **WORM vs TTL**        | **TTL per source** in `sources.yaml` (always). **Optional WORM:** `SEAWEED_OBJECT_LOCK_ENABLED` + lock-enabled bucket; COMPLIANCE until snapshot + `ttl_days`. GC unchanged for app TTL; blob delete respects lock + `retain_until`.                                                                                     | Default off for dev; enable for compliance / ransomware-resilience. Dedup extends per-chunk `retain_until`.       |
 | **YAML validation**    | Schemas, struct mapping, and loader in `src/config/`.                                                                                                                                                                                                                          | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
 | **Database backups**   | **Tier 1 (default):** host/cron produces dump → `sftp` backs up `relative_path`. **Tier 2 (optional):** `pre_backup.command` on a **dedicated** `sftp` source id. **Same machine as file backups:** second source id without `pre_backup` (§2). | No separate DB source types; chunk pipeline unchanged; restore = file only v1.                               |
 

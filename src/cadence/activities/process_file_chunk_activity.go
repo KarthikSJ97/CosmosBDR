@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"cosmosbdr/src/config"
 	"cosmosbdr/src/db/schema"
 	"cosmosbdr/src/sourceread"
 	"cosmosbdr/src/types"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input types.ProcessFileChunkRequest) (types.ProcessFileChunkResponse, error) {
@@ -68,18 +66,26 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 	}
 
 	// 7. Physical Storage Engine Upload (If the block is completely unique)
+	snapshotAt := time.Now().UTC()
+	retainUntil := ja.retainUntilForSource(input.SourceID, snapshotAt)
 	if createdNew {
 		if ja.Seaweed == nil || ja.Seaweed.Client == nil {
 			return types.ProcessFileChunkResponse{}, fmt.Errorf("seaweed client is not initialized")
 		}
-
-		_, err := ja.Seaweed.Client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket: aws.String(ja.Seaweed.Bucket),
-			Key:    aws.String(seaweedKey),
-			Body:   bytes.NewReader(storedBlob),
-		})
-		if err != nil {
-			return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to upload chunk to SeaweedFS: %w", err)
+		if ja.sourceObjectLockEnabled(input.SourceID) {
+			putRes, err := ja.Seaweed.PutObjectLocked(ctx, seaweedKey, storedBlob, "", retainUntil)
+			if err != nil {
+				return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to upload chunk to SeaweedFS: %w", err)
+			}
+			if err := ja.ChunkRepo.UpdateChunkRetainUntil(ctx, resolvedChunk.ID, putRes.RetainUntil, putRes.VersionID); err != nil {
+				return types.ProcessFileChunkResponse{}, err
+			}
+			resolvedChunk.SeaweedVersionID = putRes.VersionID
+			resolvedChunk.RetainUntil = &putRes.RetainUntil
+		} else {
+			if err := ja.Seaweed.PutObjectPlain(ctx, seaweedKey, bytes.NewReader(storedBlob), ""); err != nil {
+				return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to upload chunk to SeaweedFS: %w", err)
+			}
 		}
 	}
 
@@ -94,6 +100,12 @@ func (ja *JobActivities) ProcessFileChunkActivity(ctx context.Context, input typ
 
 	if err := ja.ChunkRepo.CreateItemChunkMapping(ctx, mapping); err != nil {
 		return types.ProcessFileChunkResponse{}, fmt.Errorf("failed to save chunk reference routing: %w", err)
+	}
+
+	if !createdNew && ja.sourceObjectLockEnabled(input.SourceID) && !retainUntil.IsZero() {
+		if err := ja.ensureChunkRetention(ctx, resolvedChunk, retainUntil); err != nil {
+			return types.ProcessFileChunkResponse{}, fmt.Errorf("extend chunk object lock: %w", err)
+		}
 	}
 
 	return types.ProcessFileChunkResponse{
