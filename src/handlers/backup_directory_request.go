@@ -30,6 +30,10 @@ func ResolveDirectoryBackupRequest(reg *config.SourceRegistry, req *types.Backup
 	payload.RelativePath = dirRel
 	payload.FileName = ""
 
+	if src, ok := reg.GetSource(payload.SourceID); ok && src.HasPreBackup() {
+		payload.PreBackup = true
+	}
+
 	layout, err := reg.ResolveDirectoryLayout(payload.SourceID, dirRel)
 	if err != nil {
 		return err

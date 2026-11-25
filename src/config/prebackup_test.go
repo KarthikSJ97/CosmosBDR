@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestBuildPreBackupExec_postgres(t *testing.T) {
+func TestBuildPreBackupExec_command(t *testing.T) {
 	src := ResolvedSource{
 		SourceDefinition: SourceDefinition{
 			ID:         "db",
@@ -10,21 +10,35 @@ func TestBuildPreBackupExec_postgres(t *testing.T) {
 			RemoteRoot: "/var/backups",
 		},
 		ResolvedPreBackup: &ResolvedPreBackup{
-			Engine:   "postgres",
-			Database: "appdb",
-			Password: "secret",
-			PGUser:   "postgres",
+			Command: []string{"bash", "-lc", "echo ok"},
+			Env:     map[string]string{"PGPASSWORD": "secret"},
 		},
 	}
-	argv, env, err := src.BuildPreBackupExec("cosmosbdr/nightly.dump")
+	argv, env, err := src.BuildPreBackupExec()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(argv) != 5 || argv[0] != "pg_dump" || argv[3] != "/var/backups/cosmosbdr/nightly.dump" {
+	if len(argv) != 3 || argv[0] != "bash" {
 		t.Fatalf("argv: %v", argv)
 	}
-	if env["PGPASSWORD"] != "secret" || env["PGUSER"] != "postgres" {
+	if env["PGPASSWORD"] != "secret" {
 		t.Fatalf("env: %v", env)
+	}
+	if src.RemoteOutputPath("db/nightly.dump") != "/var/backups/db/nightly.dump" {
+		t.Fatalf("remote output path")
+	}
+}
+
+func TestValidatePreBackup_requiresCommand(t *testing.T) {
+	src := SourceDefinition{
+		ID:   "x",
+		Type: "sftp",
+		PreBackup: &PreBackupConfig{
+			Output: PreBackupOutput{RelativePath: "out.dump"},
+		},
+	}
+	if err := validatePreBackup("sources[0]", &src); err == nil {
+		t.Fatal("expected error without command")
 	}
 }
 
@@ -33,9 +47,7 @@ func TestValidatePreBackup_rejectsLocal(t *testing.T) {
 		ID:   "x",
 		Type: "local",
 		PreBackup: &PreBackupConfig{
-			Engine:      "postgres",
-			DatabaseRef: "DB",
-			PasswordRef: "PW",
+			Command: []string{"true"},
 		},
 	}
 	if err := validatePreBackup("sources[0]", &src); err == nil {

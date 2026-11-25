@@ -29,7 +29,7 @@ func ResolveBackupWorkflowRequest(reg *config.SourceRegistry, req *types.BackupW
 		pathForJob := rel
 		if src.HasPreBackup() {
 			payload.PreBackup = true
-			pathForJob = src.DumpRelativePath(rel)
+			pathForJob = src.PreBackupOutputRelative(rel)
 		}
 		layout, err := reg.ResolveJobPaths(payload.SourceID, pathForJob)
 		if err != nil {

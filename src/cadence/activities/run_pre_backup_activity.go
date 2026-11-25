@@ -28,12 +28,12 @@ func (ja *JobActivities) RunPreBackupActivity(ctx context.Context, input types.R
 		return types.RunPreBackupResponse{}, fmt.Errorf("source %q has no pre_backup configured", sourceID)
 	}
 
-	dumpRel := src.DumpRelativePath(input.RelativePath)
-	if dumpRel == "" {
+	outRel := src.PreBackupOutputRelative(input.RelativePath)
+	if outRel == "" {
 		return types.RunPreBackupResponse{}, fmt.Errorf("relative_path is required")
 	}
 
-	argv, env, err := src.BuildPreBackupExec(dumpRel)
+	argv, env, err := src.BuildPreBackupExec()
 	if err != nil {
 		return types.RunPreBackupResponse{}, err
 	}
@@ -46,8 +46,8 @@ func (ja *JobActivities) RunPreBackupActivity(ctx context.Context, input types.R
 	}
 
 	return types.RunPreBackupResponse{
-		DumpRelativePath: dumpRel,
-		RemotePath:       src.RemoteDumpPath(dumpRel),
-		CleanupAfter:     src.ResolvedPreBackup.CleanupAfter,
+		OutputRelativePath: outRel,
+		RemotePath:         src.RemoteOutputPath(outRel),
+		CleanupAfter:       src.ResolvedPreBackup.CleanupAfter,
 	}, nil
 }

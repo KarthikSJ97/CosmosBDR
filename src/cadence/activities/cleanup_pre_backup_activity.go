@@ -17,15 +17,15 @@ func (ja *JobActivities) CleanupPreBackupActivity(ctx context.Context, input typ
 		return types.CleanupPreBackupResponse{}, fmt.Errorf("source registry is not configured")
 	}
 	sourceID := strings.TrimSpace(input.SourceID)
-	if sourceID == "" || strings.TrimSpace(input.DumpRelativePath) == "" {
-		return types.CleanupPreBackupResponse{}, fmt.Errorf("source_id and dump_relative_path are required")
+	if sourceID == "" || strings.TrimSpace(input.OutputRelativePath) == "" {
+		return types.CleanupPreBackupResponse{}, fmt.Errorf("source_id and output_relative_path are required")
 	}
 	src, ok := ja.Registry.GetSource(sourceID)
 	if !ok {
 		return types.CleanupPreBackupResponse{}, fmt.Errorf("unknown source_id %q", sourceID)
 	}
 
-	remotePath := src.RemoteDumpPath(input.DumpRelativePath)
+	remotePath := src.RemoteOutputPath(input.OutputRelativePath)
 	if err := sourceread.RemoveSFTPFile(ctx, src, remotePath); err != nil {
 		return types.CleanupPreBackupResponse{}, fmt.Errorf("cleanup pre_backup remote file: %w", err)
 	}

@@ -42,14 +42,14 @@ type RunPreBackupRequest struct {
 }
 
 type RunPreBackupResponse struct {
-	DumpRelativePath string `json:"dump_relative_path"`
+	OutputRelativePath string `json:"output_relative_path"`
 	RemotePath       string `json:"remote_path"`
 	CleanupAfter     bool   `json:"cleanup_after"`
 }
 
 type CleanupPreBackupRequest struct {
-	SourceID         string `json:"source_id"`
-	DumpRelativePath string `json:"dump_relative_path"`
+	SourceID           string `json:"source_id"`
+	OutputRelativePath string `json:"output_relative_path"`
 	CleanupAfter     bool   `json:"cleanup_after"`
 }
 

@@ -60,7 +60,7 @@ Use the **ED25519** `SHA256:…` value in `.env` as `<PREFIX>_HOST_KEY_FINGERPRI
 
 ### Same remote host: files and DB (recommended)
 
-Use **two `source_id`s** in `sources.yaml` (same `host` / `ssh` / `remote_root` via YAML anchors)—one **without** `pre_backup` for normal files, one **with** `pre_backup` for Tier 2 dump-and-backup schedules. Do not mix ad-hoc file paths on a source that has `pre_backup` (dump runs before every file job on that id). Full pattern: [multi-source-backup-strategy.md §2](./multi-source-backup-strategy.md) (“One remote host → multiple `source_id`s”).
+Use **two `source_id`s** in `sources.yaml` (same `host` / `ssh` / `remote_root` via YAML anchors)—one **without** `pre_backup` for normal files, one **with** `pre_backup` when every job on that id should run a remote hook first (e.g. Tier 2 DB export). The hook runs **once per backup job** (single-file or directory parent), not per file in a tree. Full pattern: [multi-source-backup-strategy.md §2](./multi-source-backup-strategy.md) (“One remote host → multiple `source_id`s”).
 
 ### Docker Desktop (Mac) — one-time
 

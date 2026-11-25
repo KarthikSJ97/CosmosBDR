@@ -49,6 +49,12 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 		return nil, fmt.Errorf("update parent job status: %w", err)
 	}
 
+	preBackupResp, err := runPreBackupIfNeeded(ctx, jobActivities, request)
+	if err != nil {
+		recordWorkflowFailure(ctx, jobActivities, parentJobID, "", err)
+		return nil, err
+	}
+
 	dirRel := request.Payload.RelativePath
 	if strings.TrimSpace(dirRel) == "" {
 		dirRel = "."
@@ -146,6 +152,8 @@ func DirectoryBackupWorkflow(ctx workflow.Context, request types.BackupWorkflowR
 			FilesFailed:    failed,
 		}, fmt.Errorf("%d of %d file backups failed", failed, total)
 	}
+
+	maybeCleanupPreBackup(ctx, jobActivities, request.Payload.SourceID, preBackupResp)
 
 	return &types.DirectoryBackupWorkflowResponse{
 		JobID:          parentJobID,
