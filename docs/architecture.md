@@ -589,6 +589,10 @@ flowchart LR
   Retention --> Seaweed
 ```
 
+Static overview (same ingress / orchestration / data-plane view as the README):
+
+![CosmosBDR architecture diagram](images/architecture-diagram.png)
+
 ---
 
 ## 13. SeaweedFS storage & host bind mounts

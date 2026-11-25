@@ -125,6 +125,8 @@ GET /api/v1/backups?backup_key=prod-db-vm:db/nightly.dump
 
 `unchanged: true` means `InspectFile` treated the file as identical to the prior snapshot (size, mtime, full-file SHA-256) and cloned chunk references without re-upload. Details: [Backup workflow — skip vs complete](backup-workflow.md#skip-vs-complete-unchanged-files).
 
+![List backup versions in Bruno](images/bruno-list-backups-versions.png)
+
 ### Trigger backup
 
 ```http
@@ -159,6 +161,10 @@ Directory — add `directory` to `payload` (see [backup-workflow.md](backup-work
 ```
 
 Directory jobs return `"message": "Directory backup workflow triggered successfully"`.
+
+![Single-file backup 202 in Bruno](images/bruno-backup-single-file-202.png)
+
+![Directory backup 202 in Bruno](images/bruno-directory-backup-202.png)
 
 **Errors** `400` — validation (`unknown source_id`, missing paths); `500` — Cadence start failure.
 

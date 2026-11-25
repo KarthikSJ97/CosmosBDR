@@ -21,6 +21,8 @@ Monitor runs at `http://localhost:8088` (domain `samples-domain`).
 
 ![Cadence scheduled directory backups](images/cadence-scheduled-backups.png)
 
+![Cadence — backup, restore, and GC workflows](images/cadence-workflows-mixed.png)
+
 ---
 
 ## Identity: `source_id`, paths, and `backup_key`
@@ -139,6 +141,10 @@ Use `tree /F` on the Windows host under `remote_root` to confirm layout before d
 1. `ListDirectoryActivity` applies scope server-side (local or SFTP).
 2. Parent workflow starts child `BackupWorkflow` per file (`ParentJobID` set).
 3. Concurrency capped by `CADENCE_MAX_CONCURRENT_WORKFLOWS` and `CADENCE_WORKER_MAX_CONCURRENT_ACTIVITIES`.
+
+![Directory backup parent job and child file workflows](images/cadence-directory-children-completed.png)
+
+![Directory backup timeline in Cadence](images/cadence-directory-backup-timeline.png)
 
 ### Snapshot layout in Seaweed
 
@@ -298,6 +304,8 @@ Content-Type: application/json
   }
 }
 ```
+
+Tier 2 dumps run `RunPreBackupActivity` in Cadence before `InspectFile` (visible on the workflow timeline for `prod-db-vm` jobs).
 
 **Directory** — include `directory` in `payload` (same shape as YAML `schedules[].directory`).
 

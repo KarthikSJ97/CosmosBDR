@@ -202,7 +202,10 @@ Rules:
 
 1. `cp .env.example .env` and fill required paths/secrets.
 2. `sources.yaml` validates against your env refs (`go test ./src/config/...` includes YAML tests).
-3. `docker compose up` — Atlas migrates, Cadence domain registers, schedules with `enabled: true` appear in Cadence Web.
+3. `docker compose up -d --build` then `docker compose ps` — all services **Up**; **postgres** and **seaweedfs** report **healthy**.
+
+![docker compose ps — stack healthy](images/docker-compose-ps.png)
+
 4. `GET /api/v1/sources` lists non-secret source summaries.
 
 Next: [Backup workflow](backup-workflow.md) · [API reference](api-reference.md)

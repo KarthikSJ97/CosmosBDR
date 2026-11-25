@@ -192,6 +192,8 @@ ResolveRestoreSourceActivity     (pick job_item + chunks)
 
 Watch progress in Cadence Web alongside backup workflows.
 
+![Restore chunk activities in Cadence](images/cadence-restore-chunk-timeline.png)
+
 ---
 
 ## Failure modes

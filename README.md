@@ -70,10 +70,6 @@ flowchart LR
   GC --> PG
 ```
 
-<p align="center">
-  <img src="docs/images/architecture-diagram.png" alt="CosmosBDR architecture — ingress, Cadence workflows, chunk pipeline, Postgres and SeaweedFS" width="720" />
-</p>
-
 **Single-file backup path**
 
 1. **Init job** in Postgres (flow, paths, `backup_key`).
@@ -87,7 +83,7 @@ flowchart LR
 
 **Restore** resolves the target version (latest eligible or pinned ID), reads chunks from Seaweed, decrypts, and writes to `target_path` (local or SFTP).
 
-See [Backup workflow](docs/backup-workflow.md), [Restore](docs/restore.md), and [Garbage collection](docs/garbage-collection.md) for depth. Cadence UI examples are in [Screenshots](#screenshots) below.
+See [Backup workflow](docs/backup-workflow.md), [Restore](docs/restore.md), [API reference](docs/api-reference.md), and [Architecture reference](docs/architecture.md) for diagrams and UI screenshots.
 
 ---
 
@@ -139,9 +135,7 @@ docker compose up -d --build
 docker compose ps   # all services Up; postgres + seaweedfs (healthy)
 ```
 
-<p align="center">
-  <img src="docs/images/docker-compose-ps.png" alt="docker compose ps — cosmosbdr, cadence, postgres, seaweedfs" width="720" />
-</p>
+Expected output: [Configuration — first-time setup](docs/configuration.md#first-time-setup).
 
 Services:
 
@@ -187,30 +181,6 @@ curl -s 'http://localhost:8080/api/v1/backups?backup_key=local-host-data:e2e_tes
 
 ---
 
-## Screenshots
-
-| Topic | |
-|-------|---|
-| Stack health (`docker compose ps`) | ![Compose ps](docs/images/docker-compose-ps.png) |
-| API — health check | ![Health check](docs/images/bruno-health-check.png) |
-| API — single-file backup (`202`) | ![Bruno backup](docs/images/bruno-backup-single-file-202.png) |
-| API — DB dump backup (`prod-db-vm`) | See [backup workflow](docs/backup-workflow.md#database-dumps-postgres-mysql-and-more) |
-| API — list versions (`GET /backups`) | ![List backups](docs/images/bruno-list-backups-versions.png) |
-| API — directory backup (`matched` scope) | ![Directory backup](docs/images/bruno-directory-backup-202.png) |
-| API — restore (`202`) | ![Restore API](docs/images/bruno-restore-api.png) |
-| API — directory restore (pinned parent job) | ![Directory restore](docs/images/bruno-directory-restore-202.png) · ![3/3 files](docs/images/cadence-directory-restore-completed.png) |
-| Cadence — directory parent + child file jobs | ![Directory children](docs/images/cadence-directory-children-completed.png) · ![Directory timeline](docs/images/cadence-directory-backup-timeline.png) |
-| Windows SFTP directory layout | See [backup workflow — directory](docs/backup-workflow.md#directory-backup) |
-| Schedules — list / register / reconcile | ![List schedules](docs/images/bruno-list-schedules.png) · [API reference](docs/api-reference.md#schedules) |
-| Cadence — dedup **SKIP** (`InspectFile`) | ![Skip dedup](docs/images/cadence-inspect-skip-dedup.png) |
-| Cadence — `RunPreBackupActivity` (remote hook) | See [backup workflow](docs/backup-workflow.md#database-dumps-postgres-mysql-and-more) |
-| Cadence — restore chunks + completed workflow | ![Restore chunks](docs/images/cadence-restore-chunk-timeline.png) · ![Restore completed](docs/images/cadence-restore-completed.png) |
-| Integrity — `shasum` matches API `checksum` | See [restore.md — verify dump](docs/restore.md#verify-restored-dump-checksum) |
-| Cadence — scheduled / GC workflows | ![Scheduled backups](docs/images/cadence-scheduled-backups.png) · ![Retention GC](docs/images/cadence-retention-gc-cron.png) |
-| Seaweed filer — logical snapshot paths | ![Seaweed filer](docs/images/seaweedfs-filer-snapshot.png) |
-
----
-
 ## Documentation
 
 | Guide | Description |
@@ -227,7 +197,7 @@ curl -s 'http://localhost:8080/api/v1/backups?backup_key=local-host-data:e2e_tes
 
 ---
 
-**More detail not on this page:** WORM curls and compliance screenshots — [worm-runbook.md](docs/worm-runbook.md). Unchanged-file backup (`unchanged: true`) — [backup workflow](docs/backup-workflow.md#skip-vs-complete-unchanged-files). Unsigned `GET` to the Seaweed S3 endpoint returns **403** (use signed access) — [API reference](docs/api-reference.md#seaweedfs-not-a-public-http-get).
+**More detail not on this page:** WORM testing — [worm-runbook.md](docs/worm-runbook.md). Unchanged-file backup (`unchanged: true`) — [backup workflow](docs/backup-workflow.md#skip-vs-complete-unchanged-files). Unsigned `GET` to the Seaweed S3 endpoint returns **403** (use signed access) — [API reference](docs/api-reference.md#seaweedfs-not-a-public-http-get).
 
 ---
 
