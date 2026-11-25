@@ -440,6 +440,20 @@ Two lifecycles:
 
 `RetentionGCWorkflow`**:** daily Cadence cron, separate from backup; applies per-source TTL from config loaded at startup.
 
+### Changing `ttl_days` after backups exist
+
+`ttl_days` is **not** copied onto each snapshot. Retention GC uses the **current** value (from `SourceRegistry` at startup). Uploads that use object lock also persist **`retain_until = snapshot_time + ttl_days`** on chunk/manifest metadata and on Seaweed (COMPLIANCE). Edit `sources.yaml` and **restart** the app for a new TTL to take effect.
+
+| Case | One-line summary |
+|------|------------------|
+| **Restart** | New `ttl_days` applies only after the app/worker restarts and reloads the registry. |
+| **Shorten TTL** | GC may target snapshots sooner, but WORM still blocks blob/manifest purge until each object’s original `retain_until`. |
+| **Lengthen TTL** | GC keeps Postgres metadata longer, but existing Seaweed locks stay at snapshot + **old** TTL unless a new backup **dedup-extends** the chunk. |
+| **TTL → 0** | Per-source expiry GC stops for that source; old `retain_until` on chunks/manifests still governs deletes until they lapse; global orphan-chunk sweep still runs. |
+| **New backups only** | Each run uses **current** `ttl_days` for lock duration; a config change alone does **not** rewrite `retain_until` on past snapshots. |
+
+Without object lock, only the GC side applies (no stored `retain_until` gate on blobs); shortening or lengthening TTL changes what gets expired on the next GC run after restart.
+
 ### WORM / object immutability (optional — Phase I)
 
 **When disabled (default):** TTL + refcount GC (Phase F) is **application-driven delete** after `ttl_days`. Credentials that can reach Seaweed can still delete blobs early unless storage enforces immutability.
