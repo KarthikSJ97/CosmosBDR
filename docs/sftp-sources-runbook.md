@@ -8,22 +8,21 @@ CosmosBDR connects with **host, port, user, SSH key, host key fingerprint, remot
 
 ---
 
-## Why direct SFTP failed at first (then worked)
+## Network reachability (Docker → LAN)
 
-Early tests showed containers **could not** reach `192.168.x.x` (ping/SSH `No route to host`), while the same IP worked from the Mac Terminal. Typical combined causes on **Docker Desktop for Mac**:
+CosmosBDR opens **TCP to `host:port`** from the worker container. On **Docker Desktop for Mac**, the VM must be allowed to reach LAN SFTP hosts.
 
-1. **macOS Local Network** — Docker needs **Settings → Privacy & Security → Local Network** allowed; without it, the Linux VM may not reach LAN hosts.
-2. **Docker Desktop networking** — Host networking / network stack updates (e.g. 4.8x) can change LAN reachability; worth re-testing after upgrades.
-3. **Transient LAN state** — Windows asleep, Wi‑Fi change, or wrong DHCP IP while the Mac still had an old ARP entry or route.
-4. **Misdiagnosis via tunnel** — We added a Mac `ssh -L` workaround before LAN was fixed; once (1)–(3) were resolved, `docker run … nc <WIN_HOST> 22` returned **open** and backups work **without** any tunnel.
-
-**Sanity check** (run anytime connectivity breaks):
+| Check | Action |
+|--------|--------|
+| macOS **Local Network** | Allow **Docker** under Privacy & Security → Local Network |
+| After Docker upgrades | Re-test container → host connectivity |
+| Remote host IP | Confirm SFTP server is up and the address in `.env` is current |
 
 ```bash
-docker run --rm alpine sh -c 'nc -zv -w 5 <WIN_HOST> 22'
+docker run --rm alpine sh -c 'nc -zv -w 5 <HOST> 22'
 ```
 
-If this fails but `ssh` from the **Mac** works, fix Docker/macOS networking (below) — do not assume the app is wrong.
+Use the same host as `<PREFIX>_HOST` in `.env`. If this fails but `ssh` from macOS succeeds, fix Docker/macOS networking (see [Troubleshooting](#troubleshooting)) before changing app config. CosmosBDR does **not** provide SSH port forwarding or alternate dial paths.
 
 ---
 
@@ -92,7 +91,7 @@ curl -sS -X POST http://localhost:8080/api/v1/backups \
     "flow_type": "BACKUP",
     "payload": {
       "source_id": "win-home-laptop",
-      "relative_path": "My Memes.pdf"
+      "relative_path": "reports/quarterly.pdf"
     }
   }'
 ```
@@ -124,7 +123,7 @@ curl -sS -X POST http://localhost:8080/api/v1/backups \
 
 Each matched file runs a child file backup; list versions per file with `backup_key=<source_id>:<relative_path>`.
 
-4. **List:** `curl -sS 'http://localhost:8080/api/v1/backups?backup_key=win-home-laptop:My%20Memes.pdf'`
+4. **List:** `curl -sS 'http://localhost:8080/api/v1/backups?backup_key=win-home-laptop:reports/quarterly.pdf'`
 5. **Restore (default → same path on remote):**
 
 ```bash
@@ -134,14 +133,14 @@ curl -sS -X POST http://localhost:8080/api/v1/restores \
     "flow_type": "RESTORE",
     "payload": {
       "source_id": "win-home-laptop",
-      "relative_path": "My Memes.pdf"
+      "relative_path": "reports/quarterly.pdf"
     }
   }'
 ```
 
 Output: `<remote_root>/<relative_path>` on the Windows host (overwrites if the file already exists).
 
-Optional local staging only: set top-level `"target_path": "/host-data/My Memes.pdf"` to write on the Mac instead.
+Optional local staging only: set top-level `"target_path": "/host-data/quarterly.restore.pdf"` to write on the Mac instead.
 
 **Directory restore** — restores every eligible file under a folder from backup metadata (not a live disk walk). Each file uses the same chunk pipeline as single-file restore.
 
@@ -177,7 +176,7 @@ curl -sS -X POST http://localhost:8080/api/v1/restores \
 
 Optional `directory` include/exclude filters the **backup keys** in that set (same rules as directory backup), not files currently on disk.
 
-No Mac `ssh -L`, no extra env vars beyond the source block.
+No extra env vars beyond the source block.
 
 ---
 
@@ -239,4 +238,4 @@ docker compose exec cosmosbdr sh -c 'nc -zv -w 3 <WIN_HOST> 22'   # if nc availa
 
 ## If container LAN access never works
 
-Run CosmosBDR on a **Linux host on the LAN** (same Compose stack), or fix Docker Desktop until `nc` succeeds. The application only opens **TCP to `host:port`** from the worker container — it does not implement SSH port forwarding.
+Run CosmosBDR on a **Linux host on the same network** as your SFTP sources (same Compose stack), or resolve Docker Desktop LAN access until the `nc` check succeeds.

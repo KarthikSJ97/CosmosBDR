@@ -70,6 +70,10 @@ flowchart LR
   GC --> PG
 ```
 
+<p align="center">
+  <img src="docs/images/architecture-diagram.png" alt="CosmosBDR architecture — ingress, Cadence workflows, chunk pipeline, Postgres and SeaweedFS" width="720" />
+</p>
+
 **Single-file backup path**
 
 1. **Init job** in Postgres (flow, paths, `backup_key`).
@@ -83,11 +87,7 @@ flowchart LR
 
 **Restore** resolves the target version (latest eligible or pinned ID), reads chunks from Seaweed, decrypts, and writes to `target_path` (local or SFTP).
 
-See [Backup workflow](docs/backup-workflow.md), [Restore](docs/restore.md), and [Garbage collection](docs/garbage-collection.md) for depth.
-
-<p align="center">
-  <img src="docs/images/architecture-diagram.png" alt="CosmosBDR architecture — ingress, Cadence workflows, chunk pipeline, Postgres and SeaweedFS" width="720" />
-</p>
+See [Backup workflow](docs/backup-workflow.md), [Restore](docs/restore.md), and [Garbage collection](docs/garbage-collection.md) for depth. Cadence UI examples are in [Screenshots](#screenshots) below.
 
 ---
 
