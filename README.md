@@ -1,12 +1,8 @@
 # CosmosBDR
 
-**CosmosBDR** is a self-hosted backup and disaster-recovery engine: **versioned**, **deduplicated**, **compressed** (gzip or zstd), and **encrypted** (AES-256-GCM) protection for files on **local paths**, **remote SFTP hosts**, and **scheduled database dumps**—stored in immutable object storage with Cadence workflow observability.
+> **Agentless backup. Immutable copies. One-call restoration.**
 
-**Configure sources and secrets; the engine does the rest.** In [`sources.yaml`](sources.yaml) you declare *where* data lives—each `source_id`, local folder or SFTP `remote_root`, optional crons, optional `pre_backup` for dumps—and in [`.env`](.env) you hold SSH keys, host fingerprints, encryption key, and bind-mount paths. `docker compose up` starts the stack. Backups run on the schedules you enable or when you `POST /api/v1/backups`; restore is the same shape with `POST /api/v1/restores`. Production machines stay agentless: CosmosBDR only needs **SSH/SFTP** access you would use for normal file transfer. Chunking, skip-on-unchanged, compression, encryption, retention, and workflow retries stay inside the service.
-
-<p align="center">
-  <img src="docs/images/cadence-workflows-completed.png" alt="Cadence UI — backup, restore, and retention GC workflows" width="720" />
-</p>
+Self-hosted backup & disaster recovery: **versioned**, **deduplicated**, **compressed** (gzip/zstd), **encrypted** (AES-256-GCM) file protection across **local paths**, **SFTP**, and **database dumps**—immutable object storage, Cadence observability.
 
 ---
 
@@ -32,7 +28,35 @@ flowchart LR
 
 Optional **database DR**: run dumps on the remote (customer cron) or define a `pre_backup` command in YAML—Cosmos still only backs up the resulting **file**. Full walkthrough: [Configuration](docs/configuration.md), remote SSH: [SFTP runbook](docs/sftp-sources-runbook.md).
 
-**When data is lost or corrupted**, recovery mirrors backup: list versions, call restore, bytes go back to a path you choose (local mount or the same SFTP `remote_root`). See [Restore after corruption or loss](#restore-after-corruption-or-loss).
+---
+
+## Restore after corruption or loss
+
+CosmosBDR keeps **version history** per logical path (`backup_key` = `source_id:relative_path`). If a file is corrupted, ransomware-touched, accidentally deleted on the source, or a VM is rebuilt, you already have what you need: the same `sources.yaml` / `.env`, a running stack, and intact **Postgres + Seaweed** data (on this host or a DR copy of those volumes).
+
+| Step | Action |
+|------|--------|
+| **1. Find a good snapshot** | `GET /api/v1/backups?backup_key=<source_id>:<relative_path>` — newest-first list with timestamps and `checksum` |
+| **2. Restore** | `POST /api/v1/restores` with `source_id`, `relative_path`, and `target_path` — omit `source_job_item_id` for **latest** eligible, or pin an older `job_item_id` before the incident |
+| **3. Confirm** | Optional: `shasum -a 256` on the restored file vs API `checksum` ([restore guide](docs/restore.md#verify-restored-dump-checksum)) |
+
+Writes land on **local** paths under `/host-data` or back on the **remote** over SFTP (same SSH config as backup). **Directory trees** use one restore call with `payload.directory`; **database DR** restores the dump file—then you run `pg_restore` / `mysql` on the DB host ([Restore](docs/restore.md), [DB dump recovery](docs/restore.md#database-dump-recovery)).
+
+No new agents on production machines; restore is the same HTTP + Cadence workflow you can watch at `http://localhost:8088`.
+
+```bash
+# Latest version of a file back to a local path (container sees /host-data)
+curl -s -X POST http://localhost:8080/api/v1/restores \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "flow_type": "RESTORE",
+    "target_path": "/host-data/e2e_test_asset_v2.restored",
+    "payload": {
+      "source_id": "local-host-data",
+      "relative_path": "e2e_test_asset_v2.dat"
+    }
+  }' | jq .
+```
 
 ---
 
@@ -210,35 +234,7 @@ More examples: import [`docs/bruno-api-collection/CosmosBDR.zip`](docs/bruno-api
 curl -s 'http://localhost:8080/api/v1/backups?backup_key=local-host-data:e2e_test_asset_v2.dat' | jq .
 ```
 
----
-
-## Restore after corruption or loss
-
-CosmosBDR keeps **version history** per logical path (`backup_key` = `source_id:relative_path`). If a file is corrupted, ransomware-touched, accidentally deleted on the source, or a VM is rebuilt, you already have what you need: the same `sources.yaml` / `.env`, a running stack, and intact **Postgres + Seaweed** data (on this host or a DR copy of those volumes).
-
-| Step | Action |
-|------|--------|
-| **1. Find a good snapshot** | `GET /api/v1/backups?backup_key=<source_id>:<relative_path>` — newest-first list with timestamps and `checksum` |
-| **2. Restore** | `POST /api/v1/restores` with `source_id`, `relative_path`, and `target_path` — omit `source_job_item_id` for **latest** eligible, or pin an older `job_item_id` before the incident |
-| **3. Confirm** | Optional: `shasum -a 256` on the restored file vs API `checksum` ([restore guide](docs/restore.md#verify-restored-dump-checksum)) |
-
-Writes land on **local** paths under `/host-data` or back on the **remote** over SFTP (same SSH config as backup). **Directory trees** use one restore call with `payload.directory`; **database DR** restores the dump file—then you run `pg_restore` / `mysql` on the DB host ([Restore](docs/restore.md), [DB dump recovery](docs/restore.md#database-dump-recovery)).
-
-No new agents on production machines; restore is the same HTTP + Cadence workflow you can watch at `http://localhost:8088`.
-
-```bash
-# Latest version of a file back to a local path (container sees /host-data)
-curl -s -X POST http://localhost:8080/api/v1/restores \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "flow_type": "RESTORE",
-    "target_path": "/host-data/e2e_test_asset_v2.restored",
-    "payload": {
-      "source_id": "local-host-data",
-      "relative_path": "e2e_test_asset_v2.dat"
-    }
-  }' | jq .
-```
+Hands-on restore: [Restore after corruption or loss](#restore-after-corruption-or-loss).
 
 ---
 
