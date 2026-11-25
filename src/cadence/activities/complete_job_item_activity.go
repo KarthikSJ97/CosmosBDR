@@ -19,9 +19,19 @@ func (ja *JobActivities) CompleteJobItemActivity(ctx context.Context, input type
 		return types.CompleteJobItemResponse{}, fmt.Errorf("job item not found: %s", input.ItemID)
 	}
 
-	contentChecksum, err := ja.hashJobItem(ctx, item.ItemPath, item.BackupKey, "")
+	hashPath := item.ItemPath
+	hashBackupKey := item.BackupKey
+	hashSourceID := ""
+	if input.VerifyPath != "" {
+		hashPath = input.VerifyPath
+		hashBackupKey = "" // do not infer SFTP reader from backup_key when hashing restore destination
+		if input.VerifyRemoteIO {
+			hashSourceID = input.VerifySourceID
+		}
+	}
+	contentChecksum, err := ja.hashJobItem(ctx, hashPath, hashBackupKey, hashSourceID)
 	if err != nil {
-		return types.CompleteJobItemResponse{}, fmt.Errorf("failed to hash file at %s: %w", item.ItemPath, err)
+		return types.CompleteJobItemResponse{}, fmt.Errorf("failed to hash file at %s: %w", hashPath, err)
 	}
 
 	err = ja.JobItemRepo.CompleteJobItem(ctx, input.ItemID, contentChecksum)

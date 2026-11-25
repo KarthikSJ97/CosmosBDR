@@ -191,6 +191,17 @@ func (r *JobItemRepository) GetJobItemByID(ctx context.Context, itemID string) (
 	return &item, nil
 }
 
+func (r *JobItemRepository) UpdateJobItemPath(ctx context.Context, itemID, itemPath string) error {
+	res := r.DB.WithContext(ctx).Model(&schema.JobItem{}).Where("id = ?", itemID).Update("item_path", itemPath)
+	if res.Error != nil {
+		return fmt.Errorf("update job item path: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("job item not found: %s", itemID)
+	}
+	return nil
+}
+
 func (r *JobItemRepository) CreateJobItem(jobItem *schema.JobItem) error {
 	return r.DB.Create(jobItem).Error
 }

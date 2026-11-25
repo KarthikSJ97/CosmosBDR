@@ -1,6 +1,6 @@
 package types
 
-// DirectoryScope configures Phase D directory backup selection (see docs/multi-source-backup-strategy.md).
+// DirectoryScope configures directory backup selection (see docs/architecture.md).
 type DirectoryScope struct {
 	Selection    string        `json:"selection" yaml:"selection"` // "all" | "matched"
 	Include      []PathPattern `json:"include,omitempty" yaml:"include,omitempty"`

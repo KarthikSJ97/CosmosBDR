@@ -109,6 +109,13 @@ func (ja *JobActivities) ResolveRestoreSourceActivity(ctx context.Context, input
 		remoteIO = dest.RemoteIO
 	}
 
+	if destinationPath != "" && destinationPath != restoreItem.ItemPath {
+		if err := ja.JobItemRepo.UpdateJobItemPath(ctx, restoreItem.ID, destinationPath); err != nil {
+			return types.ResolveRestoreSourceResponse{}, fmt.Errorf("update restore job item path: %w", err)
+		}
+		restoreItem.ItemPath = destinationPath
+	}
+
 	return types.ResolveRestoreSourceResponse{
 		DestinationPath: destinationPath,
 		SourceID:        sourceID,

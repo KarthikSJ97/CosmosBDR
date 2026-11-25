@@ -119,8 +119,11 @@ func runRestoreWorkflow(
 	}
 
 	completeReq := types.CompleteJobItemRequest{
-		JobID:  actResp.Job.ID,
-		ItemID: resolveResp.RestoreJobItem.ID,
+		JobID:          actResp.Job.ID,
+		ItemID:         resolveResp.RestoreJobItem.ID,
+		VerifyPath:     resolveResp.DestinationPath,
+		VerifySourceID: resolveResp.SourceID,
+		VerifyRemoteIO: resolveResp.RemoteIO,
 	}
 	var completeResp types.CompleteJobItemResponse
 	if err := workflow.ExecuteActivity(ctx, jobActivities.CompleteJobItemActivity, completeReq).Get(ctx, &completeResp); err != nil {

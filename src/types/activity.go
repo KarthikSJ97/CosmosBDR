@@ -92,6 +92,10 @@ type ProcessFileChunkResponse struct {
 type CompleteJobItemRequest struct {
 	JobID  string `json:"job_id"`
 	ItemID string `json:"item_id"`
+	// Restore only: verify checksum on the file bytes were written to (not item.ItemPath, which is the backup source location).
+	VerifyPath     string `json:"verify_path,omitempty"`
+	VerifySourceID string `json:"verify_source_id,omitempty"`
+	VerifyRemoteIO bool   `json:"verify_remote_io,omitempty"`
 }
 
 type FinalizeSkippedBackupItemRequest struct {

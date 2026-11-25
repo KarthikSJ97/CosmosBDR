@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 
 	"cosmosbdr/src/config"
@@ -88,13 +89,15 @@ func RunSSHCommand(ctx context.Context, src config.ResolvedSource, argv []string
 	}
 	defer session.Close()
 
+	// Setenv only works when sshd allows AcceptEnv for each key; many hosts do not.
+	// Prefix VAR=value on the command so pre_backup scripts see env_refs (bash -lc, set -u).
 	for k, v := range env {
 		_ = session.Setenv(k, v)
 	}
 
 	var stderr bytes.Buffer
 	session.Stderr = &stderr
-	cmd := strings.Join(shellQuoteArgs(argv), " ")
+	cmd := prependEnvToRemoteCommand(env, strings.Join(shellQuoteArgs(argv), " "))
 
 	done := make(chan error, 1)
 	go func() {
@@ -132,6 +135,26 @@ func shellQuoteArgs(argv []string) []string {
 		out[i] = shellQuote(a)
 	}
 	return out
+}
+
+func prependEnvToRemoteCommand(env map[string]string, cmd string) string {
+	if len(env) == 0 {
+		return cmd
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(shellQuote(env[k]))
+		b.WriteByte(' ')
+	}
+	b.WriteString(cmd)
+	return b.String()
 }
 
 func shellQuote(s string) string {
