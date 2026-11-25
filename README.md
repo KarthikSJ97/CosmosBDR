@@ -1,10 +1,38 @@
 # CosmosBDR
 
-**CosmosBDR** is a self-hosted backup and disaster-recovery engine: versioned, encrypted file protection across **local paths**, **remote SFTP hosts**, and **scheduled database dumps**—with immutable object storage and workflow observability.
+**CosmosBDR** is a self-hosted backup and disaster-recovery engine: **versioned**, **deduplicated**, **compressed** (gzip or zstd), and **encrypted** (AES-256-GCM) protection for files on **local paths**, **remote SFTP hosts**, and **scheduled database dumps**—stored in immutable object storage with Cadence workflow observability.
+
+**Configure sources and secrets; the engine does the rest.** In [`sources.yaml`](sources.yaml) you declare *where* data lives—each `source_id`, local folder or SFTP `remote_root`, optional crons, optional `pre_backup` for dumps—and in [`.env`](.env) you hold SSH keys, host fingerprints, encryption key, and bind-mount paths. `docker compose up` starts the stack. Backups run on the schedules you enable or when you `POST /api/v1/backups`; restore is the same shape with `POST /api/v1/restores`. Production machines stay agentless: CosmosBDR only needs **SSH/SFTP** access you would use for normal file transfer. Chunking, skip-on-unchanged, compression, encryption, retention, and workflow retries stay inside the service.
 
 <p align="center">
   <img src="docs/images/cadence-workflows-completed.png" alt="Cadence UI — backup, restore, and retention GC workflows" width="720" />
 </p>
+
+---
+
+## Get protected in three steps
+
+```mermaid
+flowchart LR
+  YAML["sources.yaml\nwhat to back up"]
+  ENV[".env\nsecrets & paths"]
+  STACK["docker compose up"]
+  RUN["Cron or POST /backups"]
+  STORE["Compressed encrypted versions"]
+  YAML --> STACK
+  ENV --> STACK
+  STACK --> RUN --> STORE
+```
+
+| Step | You do | CosmosBDR handles |
+|------|--------|-------------------|
+| **1. Declare sources** | In `sources.yaml`: each source `id`, `type` (`local` or `sftp`), paths under `container_mount` or `remote_root`, optional `schedules` and `pre_backup` | Validates config at startup; resolves `env:` / `*_ref` from `.env` |
+| **2. Wire secrets** | In `.env`: SSH private key, host key fingerprint, `ENCRYPTION_KEY`, bind-mount paths for Postgres/Seaweed/source data | Registry load, Cadence domain, Seaweed bucket, encryption at chunk layer |
+| **3. Run** | `docker compose up -d --build` — then enable schedules or call the API | Chunking, dedup, gzip/zstd + AES-256-GCM, durable Cadence workflows, retention GC, list/restore APIs |
+
+Optional **database DR**: run dumps on the remote (customer cron) or define a `pre_backup` command in YAML—Cosmos still only backs up the resulting **file**. Full walkthrough: [Configuration](docs/configuration.md), remote SSH: [SFTP runbook](docs/sftp-sources-runbook.md).
+
+**When data is lost or corrupted**, recovery mirrors backup: list versions, call restore, bytes go back to a path you choose (local mount or the same SFTP `remote_root`). See [Restore after corruption or loss](#restore-after-corruption-or-loss).
 
 ---
 
@@ -105,10 +133,13 @@ See [Backup workflow](docs/backup-workflow.md), [Restore](docs/restore.md), [API
 
 ## Quick start (Docker Compose)
 
+Hands-on version of [Get protected in three steps](#get-protected-in-three-steps). Same outcome: configured sources, healthy stack, first backup.
+
 ### Prerequisites
 
 - Docker Desktop (or Docker Engine) with Compose
 - Absolute host paths for Postgres, Seaweed, and backup source data
+- For **SFTP sources**: SSH access to the remote (`user`, key, pinned `host_key_fingerprint` in YAML + `.env`)
 
 ### 1. Configure environment
 
@@ -124,9 +155,9 @@ Edit `.env`:
 - `SEAWEED_ACCESS_KEY` / `SEAWEED_SECRET_KEY` — S3 credentials for Seaweed
 - Per-source `SOURCE_ID_*` variables (see [Configuration](docs/configuration.md))
 
-Review and adjust `sources.yaml` (committed template with local + example SFTP sources). Set `enabled: true` on schedules only when you intend to run crons.
+Review and adjust `sources.yaml` (committed template with local + example SFTP sources). For a new remote: duplicate an `sftp` block, set `id`, `host`, `user`, `remote_root`, and `ssh.secret_ref` / `host_key_fingerprint` refs—then add the matching variables to `.env`. Set `enabled: true` on schedules only when you intend to run crons.
 
-Field-by-field reference: **[Configuration guide](docs/configuration.md)**.
+Field-by-field reference: **[Configuration guide](docs/configuration.md)** · **[SFTP sources runbook](docs/sftp-sources-runbook.md)**.
 
 ### 2. Start the stack
 
@@ -181,6 +212,36 @@ curl -s 'http://localhost:8080/api/v1/backups?backup_key=local-host-data:e2e_tes
 
 ---
 
+## Restore after corruption or loss
+
+CosmosBDR keeps **version history** per logical path (`backup_key` = `source_id:relative_path`). If a file is corrupted, ransomware-touched, accidentally deleted on the source, or a VM is rebuilt, you already have what you need: the same `sources.yaml` / `.env`, a running stack, and intact **Postgres + Seaweed** data (on this host or a DR copy of those volumes).
+
+| Step | Action |
+|------|--------|
+| **1. Find a good snapshot** | `GET /api/v1/backups?backup_key=<source_id>:<relative_path>` — newest-first list with timestamps and `checksum` |
+| **2. Restore** | `POST /api/v1/restores` with `source_id`, `relative_path`, and `target_path` — omit `source_job_item_id` for **latest** eligible, or pin an older `job_item_id` before the incident |
+| **3. Confirm** | Optional: `shasum -a 256` on the restored file vs API `checksum` ([restore guide](docs/restore.md#verify-restored-dump-checksum)) |
+
+Writes land on **local** paths under `/host-data` or back on the **remote** over SFTP (same SSH config as backup). **Directory trees** use one restore call with `payload.directory`; **database DR** restores the dump file—then you run `pg_restore` / `mysql` on the DB host ([Restore](docs/restore.md), [DB dump recovery](docs/restore.md#database-dump-recovery)).
+
+No new agents on production machines; restore is the same HTTP + Cadence workflow you can watch at `http://localhost:8088`.
+
+```bash
+# Latest version of a file back to a local path (container sees /host-data)
+curl -s -X POST http://localhost:8080/api/v1/restores \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "flow_type": "RESTORE",
+    "target_path": "/host-data/e2e_test_asset_v2.restored",
+    "payload": {
+      "source_id": "local-host-data",
+      "relative_path": "e2e_test_asset_v2.dat"
+    }
+  }' | jq .
+```
+
+---
+
 ## Documentation
 
 | Guide | Description |
@@ -195,9 +256,11 @@ curl -s 'http://localhost:8080/api/v1/backups?backup_key=local-host-data:e2e_tes
 | **[Architecture reference](docs/architecture.md)** | Design principles, capability map, storage layout |
 | **[Bruno collection](docs/bruno-api-collection/README.md)** | [`CosmosBDR.zip`](docs/bruno-api-collection/CosmosBDR.zip) — import into Bruno |
 
----
+### Advanced topics (not summarized above)
 
-**More detail not on this page:** WORM testing — [worm-runbook.md](docs/worm-runbook.md). Unchanged-file backup (`unchanged: true`) — [backup workflow](docs/backup-workflow.md#skip-vs-complete-unchanged-files). Unsigned `GET` to the Seaweed S3 endpoint returns **403** (use signed access) — [API reference](docs/api-reference.md#seaweedfs-not-a-public-http-get).
+- **WORM / Object Lock** — compliance testing and delete behavior: [worm-runbook.md](docs/worm-runbook.md)
+- **Skip-on-unchanged backups** — `unchanged: true` in version lists: [backup workflow](docs/backup-workflow.md#skip-vs-complete-unchanged-files)
+- **Seaweed S3 access** — unsigned `GET` on the bucket endpoint returns **403**; use signed SDK paths: [API reference](docs/api-reference.md#seaweedfs-not-a-public-http-get)
 
 ---
 
