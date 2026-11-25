@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 
+	"cosmosbdr/src/branding"
 	"cosmosbdr/src/cadence"
 	"cosmosbdr/src/cadence/activities"
 	"cosmosbdr/src/cadence/workflows"
@@ -22,6 +23,7 @@ import (
 )
 
 func main() {
+	branding.PrintStartupBanner()
 	log.Println("Initializing CosmosBDR Engine...")
 
 	// 1. Load configuration

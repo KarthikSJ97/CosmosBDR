@@ -1,6 +1,6 @@
-# CosmosBDR
-
-> **Agentless backup. Immutable copies. One-call restoration.**
+<h1 align="center">
+  <img src="assets/logo.svg" alt="CosmosBDR — Agentless backup. Immutable copies. One-call restoration." width="590" />
+</h1>
 
 Self-hosted backup & disaster recovery: **versioned**, **deduplicated**, **compressed** (gzip/zstd), **encrypted** (AES-256-GCM) file protection across **local paths**, **SFTP**, and **database dumps**—immutable object storage, Cadence observability.
 
