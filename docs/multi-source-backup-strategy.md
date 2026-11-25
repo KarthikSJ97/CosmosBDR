@@ -430,9 +430,9 @@ Two lifecycles:
 - `ttl_days` **is set on each entry in** `sources.yaml` (source-level default for all `backup_key`s under that source). **Omitted** `retention` **or** `ttl_days: 0` **disables expiry GC for that source** (orphan chunk sweep still runs globally).
 - When a backup version’s age **exceeds the source TTL**, expire that version’s **metadata** (job_items, manifests, item_chunk links for that version only).
 
-**Physical delete (not WORM):**
+**Physical delete:**
 
-- We do **not** rely on Seaweed WORM/object-lock for v1. After TTL, eligible data is **removed for real**.
+- After TTL (and `retain_until` when object lock is on), eligible data is **removed for real** via `RetentionGCActivity`.
 - **Chunk objects** in Seaweed are deleted only when **no remaining** `item_chunk` **row references them** (global refcount). Shared chunks from dedup must survive while any **in-TTL or newer** version still points at them.
 - Order: expire version metadata → remove that version’s chunk links → **GC pass** deletes unreferenced chunks from Seaweed and orphan `chunks` rows if applicable.
 
@@ -454,30 +454,27 @@ Two lifecycles:
 
 Without object lock, only the GC side applies (no stored `retain_until` gate on blobs); shortening or lengthening TTL changes what gets expired on the next GC run after restart.
 
-### WORM / object immutability (optional — Phase I)
+### WORM / object immutability (Phase I — shipped)
 
-**When disabled (default):** TTL + refcount GC (Phase F) is **application-driven delete** after `ttl_days`. Credentials that can reach Seaweed can still delete blobs early unless storage enforces immutability.
+**Ops runbook:** [worm-runbook.md](./worm-runbook.md) (enable, filer/S3 delete smoke test, integration tests, volume migration).
 
-**When enabled:** set `SEAWEED_OBJECT_LOCK_ENABLED=true` (and use a **new** bucket created with object lock + versioning). Uploads use S3 **COMPLIANCE** `retain_until = snapshot_time + source.ttl_days`; deduped chunks get retention extended via `PutObjectRetention`. Retention GC deletes versioned objects only after app TTL **and** `retain_until`; `AccessDenied` from lock is counted as `blobs_skipped_object_lock`.
+**When disabled (`SEAWEED_OBJECT_LOCK_ENABLED=false`):** TTL + refcount GC only. Anyone with Seaweed delete access can remove blobs before policy TTL.
 
-**WORM (write-once-read-many)** adds a **storage-layer** rule: chunk/manifest objects cannot be deleted or overwritten until `retain_until`, even if an attacker has app or S3 credentials.
+**When enabled:** use a bucket created with **object lock + versioning**. Uploads use S3 **COMPLIANCE** `retain_until = snapshot_time + source.ttl_days`; deduped chunks get retention extended via `PutObjectRetention`. `RetentionGCActivity` uses versioned `DeleteObject`; lock deny → skip (`blobs_skipped_object_lock`).
 
-| Layer | v1 (shipped) | Optional WORM |
-|-------|----------------|---------------|
-| **When data may go away** | Postgres snapshot age > `ttl_days` → GC | Same TTL policy in app |
-| **Who can delete early** | Anyone with Seaweed delete access | Denied until `retain_until` (e.g. S3 Object Lock COMPLIANCE) |
-| **Dedup** | Shared chunks kept while any in-TTL snapshot references them | Per-chunk lock must be **max(`retain_until`)** across referencing snapshots |
+**WORM** adds a **storage-layer** rule: chunk/manifest objects cannot be deleted or overwritten until `retain_until`, even with app or S3 credentials (COMPLIANCE).
 
-**Alignment with TTL:** at upload, set `retain_until = snapshot_time + source.ttl_days`. GC deletes only when metadata is expired **and** `now >= retain_until` (and refcount allows for chunks).
+| Layer | Lock off | Lock on |
+|-------|----------|---------|
+| **When data may go away** | Postgres age > `ttl_days` → GC | Same app TTL + `now >= retain_until` on blobs |
+| **Who can delete early** | Anyone with Seaweed delete access | Denied until `retain_until` |
+| **Dedup** | Refcount while snapshots in TTL | Per-chunk **max(`retain_until`)** via `ExtendObjectRetention` |
 
-**Implementation sketch (future):**
+**Alignment with TTL:** at upload, `retain_until = snapshot_time + source.ttl_days`. GC deletes only when metadata is expired **and** `now >= retain_until` (and refcount allows for chunks).
 
-1. Seaweed bucket: **versioning** + **Object Lock** enabled at create; test COMPLIANCE semantics and guard filer/admin delete paths.
-2. `PutObject`: `ObjectLockMode` + `RetainUntilDate` when source `ttl_days > 0`; store `version_id` on chunk/manifest rows.
-3. `RetentionGCActivity`: versioned `DeleteObject`; treat lock deny as skip/retry; extend lock on deduped chunks when newer snapshots reference them.
-4. **Ops:** separate credentials for backup writer vs GC deleter; 3-2-1 off-host copy remains required for serious DR.
+**Verify immutability:** use S3 **`DeleteObject` with `versionId`** or `go test -tags=integration -run TestWORM` — **not** the filer UI trash (filer bypasses lock; see [worm-runbook.md](./worm-runbook.md)).
 
-**Recommendation:** keep v1 TTL + encryption + off-host copies. Add WORM when compliance or ransomware-resilience explicitly requires immutability—not as a substitute for TTL.
+**Not in scope v1:** separate writer vs GC S3 credentials (deferred). **3-2-1 off-host copy** still required for serious DR; WORM is not a second site.
 
 ---
 
@@ -558,7 +555,7 @@ Shared `chunkcodec` for backup and restore.
 5. Plaintext-hash dedup, encrypted blobs in Seaweed
 6. **Backup durability:** always Seaweed on CosmosBDR host (bind mount); remotes are ingest sources only
 7. **Restore default:** original backup source path (local mount or SFTP remote); optional `target_path` for local staging on CosmosBDR host
-8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks (no WORM v1)
+8. **Retention:** `ttl_days` per **source**; physical delete of expired metadata + unreferenced chunks; optional WORM (Phase I) via `SEAWEED_OBJECT_LOCK_ENABLED`
 9. **Config:** validate `sources.yaml` in `src/config/`; **abort server start** on any validation or mandatory env resolution failure
 10. **Directory selection (Phase D):** modes `all` (default) and `matched`; **glob + regex** pattern objects; precedence include (matched only) → exclude wins; `max_depth` optional, default unlimited
 11. **Schedules (Phase E / E.1):** nested under each source in `sources.yaml`; global unique schedule `id`; YAML `enabled` = deploy/reconcile default; runtime `/schedules` **API** for register/deregister
@@ -689,11 +686,12 @@ Track infrastructure hygiene **before** multi-source phases (Section 10). Do the
 
 - [x] **5. Data layout**: durable paths live outside the repo (e.g. sibling `cosmosbdr_data/`); no in-repo `data/` tree required. Add `.gitignore` entries only if you use repo-relative mount dirs again.
 
-- [ ] **6. Migrate or reset data** (one-time, when switching from named volumes):
+- [x] **6. Migrate or reset data** (one-time, when switching from named volumes):
   - **Fresh start:** remove old named volumes (`docker volume rm ...`), empty new host dirs, re-run backups.
   - **Keep existing chunks:** copy from old volume to host path (e.g. temp container mount) *before* cutting over compose—otherwise history in Postgres may not match files on disk.
+  - **Object lock:** bucket must be created with lock after cutover if enabling WORM (see [worm-runbook.md](./worm-runbook.md)).
 
-- [ ] **7. Document / verify:** after cutover, confirm Seaweed objects land under `SEAWEED_DATA_PATH` on the Mac and Postgres files under `POSTGRES_DATA_PATH` if used.
+- [x] **7. Document / verify:** after cutover, confirm Seaweed objects land under `SEAWEED_DATA_PATH` on the Mac and Postgres files under `POSTGRES_DATA_PATH` if used.
 
 - [ ] **8. Off-host copy (when serious about DR):** Time Machine, rsync, or second location for **both** Seaweed data and Postgres data (3-2-1). Bind mount on laptop is not a substitute for a second copy.
 
@@ -720,7 +718,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | ------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Seaweed bind mount  | done    | `cosmosbdr_data/seaweed` via `.env`                                                                                                                                                                  |
 | Postgres bind mount | done    | `cosmosbdr_data/postgres` via `.env`                                                                                                                                                                 |
-| Volume migration    |         |                                                                                                                                                                                                      |
+| Volume migration    | done    | Bind mounts `SEAWEED_DATA_PATH` / `POSTGRES_DATA_PATH`; lock bucket recreate when enabling WORM on fresh data — [worm-runbook.md](./worm-runbook.md)                                               |
 | Phase A             | done    | YAML, registry, backup_key, APIs                                                                                                                                                                     |
 | Phase B             | done    | SFTP `SourceReader`, inspect/chunk via `sourceread`                                                                                                                                                  |
 | Phase C             | skipped | No `policy_id`; schedules live under each source in `sources.yaml`                                                                                                                                   |
@@ -733,7 +731,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | DB backup strategy  | locked  | Tier 1 = cron dump + `sftp`; Tier 2 = `pre_backup` on `sftp` (§2); no `db_dump` source type                                                                                                          |
 | Phase H             | done    | `pre_backup` on `sftp`, `RunPreBackupActivity`, YAML `command`/`env_refs`, `output`, `cleanup_after`, parent-level for directory jobs                                                                 |
 | Phase H.1           | done    | `dump_freshness` in sources.yaml → fail inspect when mtime too old                                                                                                                                   |
-| Phase I             | done    | `SEAWEED_OBJECT_LOCK_ENABLED`; COMPLIANCE uploads; chunk `seaweed_version_id` / `retain_until`; GC version delete + skip on lock                                                                     |
+| Phase I             | done    | WORM shipped; ops + IT: [worm-runbook.md](./worm-runbook.md); filer/S3 delete smoke test; `go test -tags=integration -run TestWORM`                                                               |
 
 ---
 
@@ -743,7 +741,7 @@ Only start **Phase A** (YAML, `SourceRegistry`, `backup_key`) after **1–7** ar
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | **Where backups live** | All chunk/manifest storage in **Seaweed** on the **local host** running the server (`SEAWEED_DATA_PATH` bind mount).                                                                                                                                                           | Ingest from local mount or remote SFTP; durability is always central Seaweed + Postgres on this host.        |
 | **Restore default**    | **Original source path** from `backup_key` (local or SFTP write-back). Optional `target_path` for local-only staging on the CosmosBDR host. Directory restore fans out the same per-file path.                                                                                 | `PrepareRestoreTargetActivity` + chunk write use local FS or SFTP based on source type.                      |
-| **WORM vs TTL**        | **TTL per source** in `sources.yaml` (always). **Optional WORM:** `SEAWEED_OBJECT_LOCK_ENABLED` + lock-enabled bucket; COMPLIANCE until snapshot + `ttl_days`. GC unchanged for app TTL; blob delete respects lock + `retain_until`.                                                                                     | Default off for dev; enable for compliance / ransomware-resilience. Dedup extends per-chunk `retain_until`.       |
+| **WORM vs TTL**        | **TTL per source** in `sources.yaml` (always). **Optional WORM:** `SEAWEED_OBJECT_LOCK_ENABLED` + lock-enabled bucket; COMPLIANCE until snapshot + `ttl_days`. GC unchanged for app TTL; blob delete respects lock + `retain_until`.                                                                                     | Set `false` in `.env` for dev without lock bucket; runbook: [worm-runbook.md](./worm-runbook.md). Dedup extends per-chunk `retain_until`. |
 | **YAML validation**    | Schemas, struct mapping, and loader in `src/config/`.                                                                                                                                                                                                                          | Missing/invalid YAML or unresolved mandatory secrets → **process exits**; no degraded “empty registry” mode. |
 | **Database backups**   | **Tier 1 (default):** host/cron produces dump → `sftp` backs up `relative_path`. **Tier 2 (optional):** `pre_backup.command` on a **dedicated** `sftp` source id. **Same machine as file backups:** second source id without `pre_backup` (§2). | No separate DB source types; chunk pipeline unchanged; restore = file only v1.                               |
 
